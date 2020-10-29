@@ -1,0 +1,26 @@
+# frozen_string_literal: true
+
+require 'spec_helper'
+
+RSpec.describe DutyFree do
+  it 'baseline test setup' do
+  end
+
+  describe '#association reify error behaviour' do
+    it 'association reify error behaviour = :warn' do
+      # ::DutyFree.config.association_reify_error_behaviour = :warn
+
+      person = Person.create(name: 'Frank')
+      thing = Thing.create(name: 'BMW 325')
+      thing2 = Thing.create(name: 'BMX 1.0')
+
+      person.thing = thing
+      person.thing_2 = thing2
+      person.update_attributes(name: 'Steve')
+
+      thing.update_attributes(name: 'BMW 330')
+      thing.update_attributes(name: 'BMX 2.0')
+      person.update_attributes(name: 'Peter')
+    end
+  end
+end

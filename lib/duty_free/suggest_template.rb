@@ -305,7 +305,7 @@ module DutyFree
       if indent == 2
         puts
         indent = 0
-        puts '}'
+        puts '}.freeze'
       elsif indent >= 0
         print "#{' ' unless child_count.zero?}}"
       end

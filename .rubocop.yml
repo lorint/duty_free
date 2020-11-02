@@ -10,37 +10,47 @@ AllCops:
 Layout/AccessModifierIndentation:
   EnforcedStyle: outdent
 
+Layout/ArrayAlignment:
+  Exclude:
+    - spec/**/*_spec.rb
+
+Layout/FirstHashElementIndentation:
+  Exclude:
+    - spec/**/*_spec.rb
+
 Layout/LineLength:
   Max: 370
 
 Metrics/AbcSize:
   Exclude:
     - spec/test_app/db/migrate/*
-  Max: 356
+  Max: 358
 
 Metrics/BlockLength:
-  Max: 185
+  Max: 195
 
 Metrics/BlockNesting:
   Max: 6
 
 Metrics/ClassLength:
-  Max: 225
+  Enabled: true
+  Exclude:
+    - spec/test_app/db/migrate/*
 
 Metrics/CyclomaticComplexity:
-  Max: 120
+  Max: 121
 
 Metrics/MethodLength:
-  Max: 234
+  Max: 245
 
 Metrics/ModuleLength:
-  Max: 378
+  Max: 435
 
 Metrics/ParameterLists:
-  Max: 6
+  Max: 10
 
 Metrics/PerceivedComplexity:
-  Max: 130
+  Max: 133
 
 # All other cops, simply to enable them:
 
@@ -154,3 +164,6 @@ Style/SlicingWithRange:
 
 Style/StringConcatenation:
   Enabled: true
+
+Style/SymbolArray:
+  Enabled: false

@@ -6,7 +6,7 @@ require 'bundler/inline'
 
 # STEP ONE: What versions of Ruby, ActiveRecord, and DutyFree are you using?
 gemfile(true) do
-  ruby '2.4.2'
+  ruby '2.6.5'
   source 'https://rubygems.org'
   gem 'activerecord', '5.1.7'
   gem 'minitest', '5.10.3'

@@ -57,11 +57,11 @@ module DutyFree
       prefixes.reject(&:blank?).join(separator || '.')
     end
 
-    def self._clean_name(name, import_columns_as)
+    def self._clean_name(name, import_template_as)
       return name if name.is_a?(Symbol)
 
       # Expand aliases
-      (import_columns_as || []).each do |k, v|
+      (import_template_as || []).each do |k, v|
         if (k[-1] == ' ' && name.start_with?(k)) || name == k
           name.replace(v + name[k.length..-1])
           break

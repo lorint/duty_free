@@ -259,6 +259,19 @@ class SetUpTestTables < (
       t.integer :parent_id
       t.integer :partner_id
     end
+
+    # For the example from https://stackoverflow.com/questions/51955217/import-data-from-csv-into-two-tables-in-rails
+    create_table :parents do |t|
+      t.string :firstname
+      t.string :lastname
+      t.string :address
+    end
+    create_table :children do |t|
+      t.references :parent
+      t.string :firstname
+      t.string :lastname
+      t.date :dateofbirth
+    end
   end
 
   def down

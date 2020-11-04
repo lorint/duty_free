@@ -1,7 +1,7 @@
 PATH
   remote: .
   specs:
-    duty_free (1.0.1)
+    duty_free (1.0.2)
       activerecord (>= 4.2, < 6.0)
 
 GEM

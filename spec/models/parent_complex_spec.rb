@@ -33,7 +33,10 @@ RSpec.describe Parent, type: :model do
       # Default template has only Parent information
       template = Parent.suggest_template
       # All columns includes the three string columns in the parents table
-      expect(template[:all]).to eq([:firstname, :lastname, :address])
+      expect(template[:all]).to eq(
+        [:firstname, :lastname, :address, :address_line_2, :city, :province, :postal_code,
+         :telephone_number, :email, :admin_notes, :gross_income, :created_by_admin, :status]
+      )
       # Uniques finds the first available string column
       expect(template[:uniques]).to eq([:firstname])
 
@@ -42,31 +45,43 @@ RSpec.describe Parent, type: :model do
       template_has_many_children = Parent.suggest_template(0, true)
       # All columns should include the three string columns in the parents table,
       # plus the first column in children
-      expect(template_has_many_children[:all]).to eq([:firstname, :lastname, :address,
-                                     { children: [:firstname] }])
+      expect(template_has_many_children[:all]).to eq(
+        [:firstname, :lastname, :address, :address_line_2, :city, :province, :postal_code,
+         :telephone_number, :email, :admin_notes, :gross_income, :created_by_admin, :status,
+          { children: [:firstname] }]
+      )
       # # Uniques should now also include the first available string column in the children table
       # expect(template_has_many_children[:uniques]).to eq ([:firstname, :children_firstname])
 
       # Using this template should generate column headers
-      column_headers = Parent.df_export(false, template_has_many_children)
-      expect(column_headers).to eq(['Firstname', 'Lastname', 'Address', 'Children Firstname'])
+      column_headers = Parent.df_export(false, template_has_many_children).first
+      expect(column_headers).to eq(['Firstname', 'Lastname',
+        'Address', 'Address Line 2', 'City', 'Province', 'Postal Code',
+        'Telephone Number', 'Email', 'Admin Notes', 'Gross Income', 'Created By Admin', 'Status',
+        'Children Firstname'])
 
       # ------------------------------------------------------------------------------
       # Now including one full hop away of tables, and directly linked by any has_many
       template_with_children = Parent.suggest_template(1, true)
       # All columns should include the three string columns in the parents table,
       # plus the first column in children
-      expect(template_with_children[:all]).to eq([:firstname, :lastname, :address,
-                                     { children: [:firstname, :lastname, :dateofbirth] }])
+      expect(template_with_children[:all]).to eq(
+        [:firstname, :lastname, :address, :address_line_2, :city, :province, :postal_code,
+         :telephone_number, :email, :admin_notes, :gross_income, :created_by_admin, :status,
+          { children: [:firstname, :lastname, :dateofbirth, :gender] }]
+      )
       # # Uniques should still include the first available string column in the children table
       # expect(template_with_children[:uniques]).to eq ([:firstname, :children_firstname])
 
       # Using this template should generate column headers
-      column_headers = Parent.df_export(false, template_with_children)
+      column_headers = Parent.df_export(false, template_with_children).first
       expect(column_headers).to eq(
-        ['Firstname', 'Lastname', 'Address', 'Children Firstname', 'Children Lastname', 'Children Dateofbirth']
+        ['Firstname', 'Lastname',
+          'Address', 'Address Line 2', 'City', 'Province', 'Postal Code',
+          'Telephone Number', 'Email', 'Admin Notes', 'Gross Income', 'Created By Admin', 'Status',
+          'Children Firstname', 'Children Lastname', 'Children Dateofbirth', 'Children Gender']
       )
-      # Adding aliases to the template using :as allows for custom column headings to work
+      # Adding aliases to the template using :as allows for six custom column headings to work
       template_with_children[:as] = {
         'parent_1_firstname' => 'Firstname',
         'parent_1_lastname' => 'Lastname',
@@ -75,9 +90,19 @@ RSpec.describe Parent, type: :model do
         'childlastname' => 'Children Lastname',
         'childdateofbirth' => 'Children Dateofbirth'
       }
-      column_headers = Parent.df_export(false, template_with_children)
+      column_headers = Parent.df_export(false, template_with_children).first
+      puts column_headers.inspect
       expect(column_headers).to eq(
-        %w[parent_1_firstname parent_1_lastname address childfirstname childlastname childdateofbirth]
+        ['parent_1_firstname', 'parent_1_lastname', 'address',
+         # Although Address Line 2 wasn't specified in the :as list, because it begins with something
+         # that was in the list -- Address -- then its first part gets changed out, so this changed the
+         # first word here from Address down to address.  If you wanted it to have a different custom
+         # name then an entry must be placed BEFORE the more generic "Address" entry that changed it.
+         'address Line 2',
+         'City', 'Province', 'Postal Code', 'Telephone Number', 'Email', 'Admin Notes', 'Gross Income', 'Created By Admin', 'Status',
+         'childfirstname', 'childlastname', 'childdateofbirth',
+         # Children Gender wasn't specified in the :as list, so it retains its titleized naming
+         'Children Gender']
       )
     end
 
@@ -145,9 +170,8 @@ RSpec.describe Parent, type: :model do
       # Firstname,Lastname,Address,Children Firstname,Children Lastname,Children Dateofbirth
       child_info_csv = CSV.new(
         <<-CSV
-parent_1_firstname,parent_1_lastname,address,childfirstname,childlastname,childdateofbirth
-John,Wilson,68 Bell Road,Jessica,Wilson,2002-11-11
-John,Wilson,68 Bell Road,Josh,Wilson,2006-10-01
+parent_1_firstname,parent_1_lastname,address,address_line_2,city,province,postal_code,telephone_number,email,admin_notes,gross_income, created_by_admin ,status,firstname,lastname,dateofbirth,gender
+Nav,Deo,College Road,,Alliston,BC,N4c 6u9,500 000 0000,nav@prw.com,"HAPPY",13917, TRUE , Approved ,Sami,Kidane,2009-10-10,Male
         CSV
       )
 
@@ -155,31 +179,43 @@ John,Wilson,68 Bell Road,Josh,Wilson,2006-10-01
       expect { Parent.df_import(child_info_csv, {
         uniques: [:firstname, :children_firstname],
         required: [],
-        all: [:firstname, :lastname, :address,
-          { children: [:firstname, :lastname, :dateofbirth] }],
+        all: [:firstname, :lastname, :address, :address_line_2, :city, :province, :postal_code,
+              :telephone_number, :email, :admin_notes, :gross_income, :created_by_admin, :status,
+          { children: [:firstname, :lastname, :dateofbirth, :gender] }],
         # An alias for each incoming column
         as: {
               'parent_1_firstname' => 'Firstname',
               'parent_1_lastname' => 'Lastname',
               'address' => 'Address',
-              'childfirstname' => 'Children Firstname',
-              'childlastname' => 'Children Lastname',
-              'childdateofbirth' => 'Children Dateofbirth'
+              'address_line_2' => 'Address Line 2',
+              'city' => 'City',
+              'province' => 'Province',
+              'postal_code' => 'Postal Code',
+              'telephone_number' => 'Telephone Number',
+              'email' => 'Email',
+              'admin_notes' => 'Admin Notes',
+              'gross_income' => 'Gross Income',
+              'created_by_admin' => 'Created By Admin',
+              'status' => 'Status',
+
+              'firstname' => 'Children Firstname',
+              'lastname' => 'Children Lastname',
+              'dateofbirth' => 'Children Dateofbirth',
+              'gender' => 'Children Gender'
             }
       }.freeze) }.not_to raise_error
 
-      parents = Parent.order(:id).pluck(:firstname, :lastname, :address)
+      parents = Parent.order(:id).pluck(:firstname, :lastname,
+        :address, :address_line_2, :city, :province, :postal_code,
+        :telephone_number, :email, :admin_notes, :gross_income, :created_by_admin, :status)
       expect(parents.count).to eq(1)
-      expect(parents).to eq([['John', 'Wilson', '68 Bell Road']])
+      expect(parents).to eq([['Nav', 'Deo',
+        'College Road', nil, 'Alliston', 'BC', 'N4c 6u9',
+        '500 000 0000', 'nav@prw.com', 'HAPPY', 13917, true, ' Approved ']])
 
-      children = Child.order(:id).pluck(:firstname, :lastname, :dateofbirth)
-      expect(children.count).to eq(2)
-      expect(children).to eq(
-        [
-          ['Jessica', 'Wilson', Date.new(2002, 11, 11)],
-          ['Josh', 'Wilson', Date.new(2006, 10, 1)]
-        ]
-      )
+      children = Child.order(:id).pluck(:firstname, :lastname, :dateofbirth, :gender)
+      expect(children.count).to eq(1)
+      expect(children).to eq([["Sami", "Kidane", Date.new(2009, 10, 10), 'Male']])
     end
   end
 end

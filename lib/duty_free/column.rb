@@ -28,7 +28,9 @@ module DutyFree
       # sql_col = ::DutyFree::Util._prefix_join([table_name.compact.join('_'), name])
 
       # Foolproof way, using the AREL mapping:
-      sql_col = ::DutyFree::Util._prefix_join([mapping["#{pre_prefix.tr('.', '_')}_#{prefix}_"], name])
+      this_pre_prefix = pre_prefix.tr('.', '_')
+      this_pre_prefix << '_' unless pre_prefix.blank?
+      sql_col = ::DutyFree::Util._prefix_join([mapping["#{this_pre_prefix}#{prefix}_"], name])
       sym = to_sym.to_s
       sql_col == sym ? sql_col : "#{sql_col} AS #{sym}"
     end

@@ -46,7 +46,7 @@ module DutyFree
           end
           (is_required ? '* ' : '') + col
         end
-        rows = Array(rows)
+        rows = [rows]
 
         if is_with_data
           # Automatically create a JOINs strategy and select list to get back all related rows
@@ -55,8 +55,7 @@ module DutyFree
 
           # So we can properly create the SELECT list, create a mapping between our
           # column alias prefixes and the aliases AREL creates.
-          # Warning: Delegating ast to arel is deprecated and will be removed in Rails 6.0
-          arel_alias_names = ::DutyFree::Util._recurse_arel(relation.ast.cores.first.source)
+          arel_alias_names = ::DutyFree::Util._recurse_arel(relation.arel.ast.cores.first.source)
           our_names = ::DutyFree::Util._recurse_arel(template_joins)
           mapping = our_names.zip(arel_alias_names).to_h
 
@@ -87,7 +86,7 @@ module DutyFree
                             else
                               suggest_template(0, false, false)
                             end
-        puts "Chose #{import_template}"
+        # puts "Chose #{import_template}"
         inserts = []
         updates = []
         counts = Hash.new { |h, k| h[k] = [] }
@@ -581,7 +580,7 @@ module DutyFree
         klass.instance_variable_set(:@template_detail_columns, (template_detail_columns = nil))
       end
       unless template_detail_columns
-        puts "* Redoing *"
+        # puts "* Redoing *"
         template_detail_columns = _recurse_def(klass, import_template[:all], import_template).first.map(&:to_sym)
         klass.instance_variable_set(:@template_detail_columns, template_detail_columns)
       end

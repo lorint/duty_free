@@ -5,9 +5,10 @@ ENV['DB'] ||= 'sqlite'
 
 # Note that in order for pry-byebug to work, in gemfiles/vendor/bundle/gems/pry-0.13.1/lib/pry.rb
 # "require 'pry/cli'" must exist AFTER "require 'pry/commands/exit_all'"
-# (You can put the requires for wrapped_module, wrapped_module/candidate, slop, cli, core_extensions, repl_file_loader, code/loc, code/code_range, code/code_file, method/weird_method_locator, method/disowned, and method/patcher all together at the end and it all works.)
-# require 'pry-byebug'
-require 'byebug'
+# (You can put the requires for wrapped_module, wrapped_module/candidate, slop, cli, core_extensions, repl_file_loader, code/loc, code/code_range, code/code_file, method/weird_method_locator, method/disowned, and method/patcher
+# all together at the end and it all works.)
+require 'pry-byebug'
+# require 'byebug'
 
 unless File.exist?(File.expand_path('test_app/config/database.yml', __dir__))
   warn 'No database.yml detected for the test app, please run `rake prepare` first'

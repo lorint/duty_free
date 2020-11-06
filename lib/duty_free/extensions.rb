@@ -14,6 +14,7 @@ module DutyFree
 
     # :nodoc:
     module ClassMethods
+      MAX_ID = Arel.sql('MAX(id)')
       # def self.extended(model)
       # end
 
@@ -203,8 +204,9 @@ module DutyFree
               is_do_save = true
               existing_unique = valid_unique.inject([]) do |s, v|
                 s << if v.last.is_a?(Array)
-                       v.last[0].where(v.last[1] => row[v.last[2]]).limit(1).pluck('MAX(id)').first.to_s
+                       v.last[0].where(v.last[1] => row[v.last[2]]).limit(1).pluck(MAX_ID).first.to_s
                      else
+                       binding.pry if v.last.nil?
                        row[v.last].to_s
                      end
               end
@@ -292,19 +294,21 @@ module DutyFree
                                      if klass == sub_obj.class # Self-referencing thing pointing to us?
                                        # %%% This should be more general than just for self-referencing things.
                                        sub_cols = cols.map { |c| c.start_with?(trim_prefix) ? c[trim_prefix.length..-1] : nil }
-                                       sub_bt, criteria = klass.find_existing(uniques, sub_cols, starred, import_template, keepers, assoc, row, klass, all, trim_prefix)
+                                       # assoc
+                                       sub_bt, criteria = klass.find_existing(uniques, sub_cols, starred, import_template, keepers, nil, row, klass, all, '')
                                      else
                                        sub_bt, criteria = klass.find_existing(uniques, cols, starred, import_template, keepers, nil, row, klass, all, trim_prefix)
                                      end
                                    rescue ::DutyFree::NoUniqueColumnError
                                      sub_unique = nil
                                    end
-                                   # binding.pry if sub_obj.is_a?(Employee) && sub_obj.first_name == 'Nancy' &&
-                                   #   sub_bt.is_a?(Employee)
+                                   # Self-referencing shouldn't build a new one if it couldn't find one
                                    # %%% Can criteria really ever be nil anymore?
-                                   sub_bt ||= klass.new(criteria || {})
+                                   unless klass == sub_obj.class && criteria.empty?
+                                     sub_bt ||= klass.new(criteria || {})
+                                   end
                                    sub_obj.send("#{path_part}=", sub_bt)
-                                   sub_bt # unless klass == sub_obj.class # Don't go further if it's self-referencing
+                                   sub_bt
                                  end
                     end
                     # Look for possible missing polymorphic detail
@@ -328,6 +332,7 @@ module DutyFree
                       sub_hm, criteria = klass.find_existing(uniques, cols, starred, import_template, keepers, assoc.inverse_of, row, sub_next, all, trim_prefix)
 
                       # If still not found then create a new related object using this has_many collection
+                      # (criteria.empty? ? nil : sub_next.new(criteria))
                       sub_next = sub_hm || sub_next.new(criteria)
                     end
                     unless sub_next.nil?
@@ -342,8 +347,10 @@ module DutyFree
                       sub_objects[this_path] = sub_next if this_path.present?
                     end
                   end
-                  sub_obj = sub_next unless sub_next.nil?
+                  # binding.pry if sub_obj.reports_to
+                  sub_obj = sub_next #if sub_next
                 end
+                # binding.pry if sub_obj.nil?
                 next if sub_obj.nil?
 
                 sym = "#{v.name}=".to_sym
@@ -366,6 +373,7 @@ module DutyFree
                     row_errors[v.name] << "Boolean value \"#{row[key]}\" in column #{key + 1} not recognized"
                   end
                 end
+                # binding.pry if v.name.to_s == 'first_name' && sub_obj.first_name == 'Nancy'
                 sub_obj.send(sym, row[key])
                 # else
                 #   puts "  #{sub_class.name} doesn't respond to #{sym}"
@@ -475,48 +483,76 @@ module DutyFree
         # Might have to do a deferred save kind of thing, and also make sure the product stuff came first
         # before the other stuff
 
+        # Find by all corresponding columns
+
         # Add in any foreign key stuff we can find from other belongs_to associations
         # %%% This is starting to look like the other BelongsToAssociation code above around line
         # 697, so it really needs to be turned into something recursive instead of this two-layer
         # thick thing at best.
+
+        # First check the belongs_tos
+        criteria = {}
+        bt_criteria = {}
+        bt_criteria_all_nil = true
+        bt_col_indexes = []
+        only_valid_uniques = (train_we_came_in_here_on == false)
         bts = reflect_on_all_associations.each_with_object([]) do |sn_assoc, s|
           if sn_assoc.is_a?(ActiveRecord::Reflection::BelongsToReflection) &&
-             (!train_we_came_in_here_on || sn_assoc != train_we_came_in_here_on) &&
-             sn_assoc.klass != self # Omit stuff pointing to us (like self-referencing stuff)
+             (!train_we_came_in_here_on || sn_assoc != train_we_came_in_here_on) # &&
+             # sn_assoc.klass != self # Omit stuff pointing to us (like self-referencing stuff)
             # %%% Make sure there's a starred column we know about from this one
-            ret[sn_assoc.foreign_key] = nil if train_we_came_in_here_on == false
+            ret[sn_assoc.foreign_key] = nil if only_valid_uniques
             s << sn_assoc
           end
           s
         end
+        bts.each do |sn_bt|
+          # This search prefix becomes something like "Order Details Product "
+          # binding.pry
+          cols.each_with_index do |bt_col, idx|
+            next if bt_col_indexes.include?(idx) ||
+                    !bt_col&.start_with?(trim_prefix + "#{sn_bt.name.to_s.underscore.tr('_', ' ').titleize} ")
 
-        # Find by all corresponding columns
-        criteria = {}
+            fk_id = if row
+                      # Max ID so if there are multiple, only the most recent one is picked.
+                      # %%% Need to stack these up in case there are multiple
+                      # (like first_name, last_name on a referenced employee)
+                      # binding.pry
+                      sn_bt.klass.where(keepers[idx].name => row[idx]).limit(1).pluck(MAX_ID).first
+                    else
+                      [sn_bt.klass, keepers[idx].name, idx]
+                    end
+            if fk_id
+              bt_col_indexes << idx
+              bt_criteria_all_nil = false
+            end
+            bt_criteria[(fk_name = sn_bt.foreign_key)] = fk_id
+            # Add to our criteria if this belongs_to is required
+            # %%% Rails older than 5.0 handles this stuff differently!
+            unless sn_bt.options[:optional] || !sn_bt.klass.belongs_to_required_by_default
+              criteria[fk_name] = fk_id
+            else # Should not have this fk as a requirement
+              ret.delete(fk_name) if only_valid_uniques && ret.include?(fk_name)
+            end
+          end
+        end
+
+        new_criteria_all_nil = bt_criteria_all_nil
         if train_we_came_in_here_on != false
           criteria = ret.each_with_object({}) do |v, s|
-            s[v.first.to_sym] = row[v.last]
+            next if bt_col_indexes.include?(v.last)
+
+            new_criteria_all_nil = false if (s[v.first.to_sym] = row[v.last])
             s
           end
         end
 
-        bts.each do |sn_bt|
-          # This search prefix becomes something like "Order Details Product "
-          cols.each_with_index do |bt_col, idx|
-            next unless bt_col.start_with?(trim_prefix + "#{sn_bt.name.to_s.underscore.tr('_', ' ').titleize} ")
-
-            fk_id = if row
-                      # Max ID so if there are multiple, only the most recent one is picked.
-                      # %%% Need to stack these up in case there are multiple (like first_name, last_name on a referenced employee)
-                      sn_bt.klass.where(keepers[idx].name => row[idx]).limit(1).pluck('MAX(id)').first
-                    else
-                      [sn_bt.klass, keepers[idx].name, idx]
-                    end
-            criteria[sn_bt.foreign_key] = fk_id
-          end
-        end
-
         # Short-circuiting this to only get back the valid_uniques?
-        return ret.merge(criteria) if train_we_came_in_here_on == false
+        return ret.merge(criteria) if only_valid_uniques
+
+        # binding.pry if obj.is_a?(Order)
+        # If there's nothing to match upon then we're out
+        return [nil, {}] if new_criteria_all_nil
 
         # With this criteria, find any matching has_many row we can so we can update it
         sub_hm = obj.find do |hm_obj|
@@ -532,7 +568,7 @@ module DutyFree
         # Try looking it up through ActiveRecord
         # %%% Should we perhaps do this first before the more intensive find routine above?
         sub_hm = obj.find_by(criteria) if sub_hm.nil?
-        [sub_hm, criteria]
+        [sub_hm, criteria.merge(bt_criteria)]
       end
 
     private

@@ -1,15 +1,20 @@
 # DutyFree gem
 
+### Import and Export your data in the least taxing way possible!
+
 An ActiveRecord extension that simplifies importing and exporting of data stored in
 one or more models.  Source and destination can be CSV, XLS, XLSX, ODT, HTML tables,
-or simple Ruby arrays.
+or simple Ruby arrays.  What really sets this gem apart from other similar gems is
+the ability to work with related tables as a set.  For example you might have data
+from one spreadsheet target category, subcategory, and product tables all at once,
+seamlessly importing and exporting that data.
 
 ## Documentation
 
 | Version        | Documentation                                             |
 | -------------- | --------------------------------------------------------- |
 | Unreleased     | https://github.com/lorint/duty_free/blob/master/README.md |
-| 1.0.1          | https://github.com/lorint/duty_free/blob/v1.0.1/README.md |
+| 1.0.3          | https://github.com/lorint/duty_free/blob/v1.0.3/README.md |
 
 ## Table of Contents
 

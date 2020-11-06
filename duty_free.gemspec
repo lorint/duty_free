@@ -30,8 +30,8 @@ Gem::Specification.new do |s|
   s.add_dependency 'activerecord', ['>= 4.2', '< 6.0']
 
   s.add_development_dependency 'appraisal', '~> 2.2'
-  # s.add_development_dependency 'pry-byebug', '~> 3.7.0'
-  s.add_development_dependency 'byebug'
+  s.add_development_dependency 'pry-byebug', '~> 3.7.0'
+  # s.add_development_dependency 'byebug'
   s.add_development_dependency 'ffaker', '~> 2.11'
   s.add_development_dependency 'generator_spec', '~> 0.9.4'
   s.add_development_dependency 'memory_profiler', '~> 0.9.14'

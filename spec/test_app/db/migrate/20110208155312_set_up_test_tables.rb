@@ -71,10 +71,6 @@ class SetUpTestTables < (
       t.timestamps null: true, limit: 6
     end
 
-    create_table :bananas, force: true do |t|
-      t.timestamps null: true, limit: 6
-    end
-
     create_table :wotsits, force: true do |t|
       t.integer :widget_id
       t.string  :name
@@ -174,19 +170,19 @@ class SetUpTestTables < (
       t.timestamps null: true, limit: 6
     end
 
-    create_table :customers, force: true do |t|
-      t.string :name
-    end
+    # create_table :customers, force: true do |t|
+    #   t.string :name
+    # end
 
-    create_table :orders, force: true do |t|
-      t.integer :customer_id
-      t.string  :order_date
-    end
+    # create_table :orders, force: true do |t|
+    #   t.integer :customer_id
+    #   t.string  :order_date
+    # end
 
-    create_table :line_items, force: true do |t|
-      t.integer :order_id
-      t.string  :product
-    end
+    # create_table :line_items, force: true do |t|
+    #   t.integer :order_id
+    #   t.string  :product
+    # end
 
     create_table :fruits, force: true do |t|
       t.string :name
@@ -225,20 +221,99 @@ class SetUpTestTables < (
       t.integer :quotation_id
     end
 
-    create_table :foo_habtms, force: true do |t|
+    # has_many :through
+    create_table :recipes, force: true do |t|
       t.string :name
     end
+    create_table :ingredients, force: true do |t|
+      t.string :name
+    end
+    create_table :ingredient_recipes, force: true do |t|
+      t.references :ingredient
+      t.references :recipe
+    end
 
+    # HABTM
     create_table :bar_habtms, force: true do |t|
       t.string :name
     end
-
-    create_table :bar_habtms_foo_habtms, force: true, id: false do |t|
-      t.integer :foo_habtm_id
-      t.integer :bar_habtm_id
+    create_table :foo_habtms, force: true do |t|
+      t.string :name
     end
-    add_index :bar_habtms_foo_habtms, [:foo_habtm_id]
-    add_index :bar_habtms_foo_habtms, [:bar_habtm_id]
+    create_table :bar_habtms_foo_habtms, force: true, id: false do |t|
+      t.references :bar_habtm
+      t.references :foo_habtm
+    end
+
+    # Self-referencing table
+    create_table :employees do |t|
+      t.string :first_name
+      t.string :last_name
+      t.string :title
+      t.string :title_of_courtesy
+      t.date :birth_date
+      t.date :hire_date
+      t.string :address
+      t.string :city
+      t.string :region
+      t.string :postal_code
+      t.string :country
+      t.string :home_phone
+      t.string :extension
+      t.text :notes
+      t.references :reports_to
+    end
+    create_table :customers do |t|
+      t.string :company_code
+      t.string :company_name
+      t.string :contact_name
+      t.string :contact_title
+      t.string :address
+      t.string :city
+      t.string :region
+      t.string :postal_code
+      t.string :country
+      t.string :phone
+      t.string :fax
+    end
+    create_table :orders do |t|
+      t.date :order_date
+      t.date :required_date
+      t.date :shipped_date
+      t.references :ship_via, index: true
+      t.decimal :freight
+      t.string :ship_name
+      t.string :ship_address
+      t.string :ship_city
+      t.string :ship_region
+      t.string :ship_postal_code
+      t.string :ship_country
+      t.string :customer_code
+      t.references :customer, index: true
+      t.references :employee, index: true
+    end
+    create_table :categories do |t|
+      t.string :category_name
+      t.string :description
+    end
+    create_table :products do |t|
+      t.string :product_name
+      t.string :quantity_per_unit
+      t.decimal :unit_price
+      t.integer :units_in_stock
+      t.integer :units_on_order
+      t.integer :reorder_level
+      t.boolean :discontinued
+      t.references :supplier, index: true
+      t.references :category, index: true
+    end
+    create_table :order_details do |t|
+      t.decimal :unit_price
+      t.integer :quantity
+      t.decimal :discount
+      t.references :order, index: true
+      t.references :product, index: true
+    end
 
     # custom_primary_key_records use a uuid column (string)
     create_table :custom_primary_key_records, id: false, force: true do |t|

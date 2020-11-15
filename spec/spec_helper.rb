@@ -10,9 +10,7 @@ ENV['DB'] ||= 'sqlite'
 require 'pry-byebug'
 # require 'byebug'
 
-unless File.exist?(File.expand_path('test_app/config/database.yml', __dir__))
-  warn 'No database.yml detected for the test app, please run `rake prepare` first'
-end
+warn 'No database.yml detected for the test app, please run `rake prepare` first' unless File.exist?(File.expand_path('test_app/config/database.yml', __dir__))
 
 RSpec.configure do |config|
   config.example_status_persistence_file_path = '.rspec_results'

@@ -53,13 +53,9 @@ module DutyFree
         # Always process belongs_to, and also process has_one and has_many if do_has_many is chosen.
         # Skip any HMT or HABTM. (Maybe break out HABTM into a combo HM and BT in the future.)
         if is_habtm
-          unless ActiveRecord::Base.connection.table_exists?(assoc.join_table)
-            puts "* In the #{this_klass.name} model there's a problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because join table \"#{assoc.join_table}\" does not exist.  You can create it with a create_join_table migration."
-          end
+          puts "* In the #{this_klass.name} model there's a problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because join table \"#{assoc.join_table}\" does not exist.  You can create it with a create_join_table migration." unless ActiveRecord::Base.connection.table_exists?(assoc.join_table)
           # %%% Search for other associative candidates to use instead of this HABTM contraption
-          if assoc.options.include?(:through)
-            puts "* In the #{this_klass.name} model there's a problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because it includes \"through: #{assoc.options[:through].inspect}\" which is pointless and should be removed."
-          end
+          puts "* In the #{this_klass.name} model there's a problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because it includes \"through: #{assoc.options[:through].inspect}\" which is pointless and should be removed." if assoc.options.include?(:through)
         end
         if (is_through = assoc.is_a?(ActiveRecord::Reflection::ThroughReflection)) && assoc.options.include?(:as)
           puts "* In the #{this_klass.name} model there's a problem with:  \"has_many :#{assoc.name} through: #{assoc.options[:through].inspect}\"  because it also includes \"as: #{assoc.options[:as].inspect}\", so please choose either for this line to be a \"has_many :#{assoc.name} through:\" or to be a polymorphic \"has_many :#{assoc.name} as:\".  It can't be both."
@@ -203,9 +199,7 @@ module DutyFree
 
       # Requireds takes its cues from all attributes having a presence validator
       requireds = _find_requireds(klass)
-      if priority_excluded_columns
-        klass_columns = klass_columns.reject { |col| priority_excluded_columns.include?(col.name) }
-      end
+      klass_columns = klass_columns.reject { |col| priority_excluded_columns.include?(col.name) } if priority_excluded_columns
       excluded_columns = %w[created_at updated_at deleted_at]
       unique = [(
         # Find the first text field of a required if one exists
@@ -240,8 +234,14 @@ module DutyFree
           if klass.columns.map(&:name).include?(attrib)
             s << attrib
           else
-            puts "* In the #{klass.name} model  \"validates_presence_of :#{attrib}\"  should be removed as it does not refer to any existing column."
-            errored_columns << klass_col
+            bt_names = klass.reflect_on_all_associations.each_with_object([]) do |assoc, names|
+              names << assoc.name.to_s if assoc.is_a?(ActiveRecord::Reflection::BelongsToReflection)
+              names
+            end
+            unless bt_names.include?(attrib)
+              puts "* In the #{klass.name} model  \"validates_presence_of :#{attrib}\"  should be removed as it does not refer to any existing column."
+              errored_columns << klass_col
+            end
           end
         end
       end

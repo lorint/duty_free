@@ -31,7 +31,8 @@ RSpec.describe Parent, type: :model do
   context 'with valid attributes' do
     it 'should be able to suggest a template that relates Parent and Child' do
       # Default template has only Parent information
-      template = Parent.suggest_template
+      # This is as if you had simply run:  Parent.suggest_template
+      template = Parent.suggest_template(0, false, false)
       # All columns includes the three string columns in the parents table
       expect(template[:all]).to eq(
         [:firstname, :lastname, :address, :address_line_2, :city, :province, :postal_code,
@@ -42,7 +43,7 @@ RSpec.describe Parent, type: :model do
 
       # ----------------------------------------------------
       # Now including tables directly linked by any has_many
-      template_has_many_children = Parent.suggest_template(0, true)
+      template_has_many_children = Parent.suggest_template(0, true, false)
       # All columns should include the three string columns in the parents table,
       # plus the first column in children
       expect(template_has_many_children[:all]).to eq(
@@ -62,7 +63,7 @@ RSpec.describe Parent, type: :model do
 
       # ------------------------------------------------------------------------------
       # Now including one full hop away of tables, and directly linked by any has_many
-      template_with_children = Parent.suggest_template(1, true)
+      template_with_children = Parent.suggest_template(1, true, false)
       # All columns should include the three string columns in the parents table,
       # plus the first column in children
       expect(template_with_children[:all]).to eq(
@@ -91,7 +92,6 @@ RSpec.describe Parent, type: :model do
         'childdateofbirth' => 'Children Dateofbirth'
       }
       column_headers = Parent.df_export(false, template_with_children).first
-      puts column_headers.inspect
       expect(column_headers).to eq(
         ['parent_1_firstname', 'parent_1_lastname', 'address',
          # Although Address Line 2 wasn't specified in the :as list, because it begins with something
@@ -118,7 +118,7 @@ RSpec.describe Parent, type: :model do
 
       # Perform the import on CSV data
       # Get the suggested default import template for the Parent model
-      template_with_children = Parent.suggest_template(1, true)
+      template_with_children = Parent.suggest_template(1, true, false)
       # Initially we only force uniqueness on the first string column of Parent
       expect(template_with_children[:uniques]).to eq([:firstname])
       # Add in uniqueness for the Child portion of each incoming row.  (Without this then
@@ -130,9 +130,7 @@ RSpec.describe Parent, type: :model do
       template_with_children[:uniques] << :children_firstname
 
       # Do the import
-      expect {
-        Parent.df_import(child_info, template_with_children)
-      }.not_to raise_error
+      expect { Parent.df_import(child_info, template_with_children) }.not_to raise_error
 
       parents = Parent.order(:id).pluck(:firstname, :lastname, :address)
       expect(parents.count).to eq(3)
@@ -141,13 +139,15 @@ RSpec.describe Parent, type: :model do
       parent_ids = Parent.order(:id).pluck(:id)
       children = Child.order(:id).pluck(:firstname, :lastname, :dateofbirth, :parent_id)
       expect(children.count).to eq(5)
-      expect(children).to eq([
-        ['Bart', 'Simpson', Date.new(2002, 11, 11), parent_ids.first],
-        ['Lisa', 'Simpson', Date.new(2006, 10, 1), parent_ids.first],
-        ['Bart', 'Simpson', Date.new(2002, 11, 11), parent_ids.second],
-        ['Lisa', 'Simpson', Date.new(2006, 10, 1), parent_ids.second],
-        ['Ralph', 'Wiggum', Date.new(2005, 4, 1), parent_ids.third]
-      ])
+      expect(children).to eq(
+        [
+          ['Bart', 'Simpson', Date.new(2002, 11, 11), parent_ids.first],
+          ['Lisa', 'Simpson', Date.new(2006, 10, 1), parent_ids.first],
+          ['Bart', 'Simpson', Date.new(2002, 11, 11), parent_ids.second],
+          ['Lisa', 'Simpson', Date.new(2006, 10, 1), parent_ids.second],
+          ['Ralph', 'Wiggum', Date.new(2005, 4, 1), parent_ids.third]
+        ]
+      )
       # As an aside -- if you feel that seeing these four entries is inappropriate repetition
       # then consider that having only this one to many relationship means that for two parents
       # that have the same children, being as each Child object has just one foreign key then
@@ -165,57 +165,62 @@ RSpec.describe Parent, type: :model do
 
     it 'should be able to import from CSV data' do
       # Set the import template for the Parent model to a suggested default
-      # Parent::IMPORT_TEMPLATE = Parent.suggest_template(1, true)
+      # Parent::IMPORT_TEMPLATE = Parent.suggest_template(1, true, false)
 
       # Firstname,Lastname,Address,Children Firstname,Children Lastname,Children Dateofbirth
       child_info_csv = CSV.new(
-        <<-CSV
-parent_1_firstname,parent_1_lastname,address,address_line_2,city,province,postal_code,telephone_number,email,admin_notes,gross_income, created_by_admin ,status,firstname,lastname,dateofbirth,gender
-Nav,Deo,College Road,,Alliston,BC,N4c 6u9,500 000 0000,nav@prw.com,"HAPPY",13917, TRUE , Approved ,Sami,Kidane,2009-10-10,Male
+        <<~CSV
+        parent_1_firstname,parent_1_lastname,address,address_line_2,city,province,postal_code,telephone_number,email,admin_notes,gross_income, created_by_admin ,status,firstname,lastname,dateofbirth,gender
+        Nav,Deo,College Road,,Alliston,BC,N4c 6u9,500 000 0000,nav@prw.com,"HAPPY",13917, TRUE , Approved ,Sami,Kidane,2009-10-10,Male
         CSV
       )
 
       # Perform the import on CSV data, overriding the default generated template
-      expect { Parent.df_import(child_info_csv, {
-        uniques: [:firstname, :children_firstname],
-        required: [],
-        all: [:firstname, :lastname, :address, :address_line_2, :city, :province, :postal_code,
-              :telephone_number, :email, :admin_notes, :gross_income, :created_by_admin, :status,
-          { children: [:firstname, :lastname, :dateofbirth, :gender] }],
-        # An alias for each incoming column
-        as: {
-              'parent_1_firstname' => 'Firstname',
-              'parent_1_lastname' => 'Lastname',
-              'address' => 'Address',
-              'address_line_2' => 'Address Line 2',
-              'city' => 'City',
-              'province' => 'Province',
-              'postal_code' => 'Postal Code',
-              'telephone_number' => 'Telephone Number',
-              'email' => 'Email',
-              'admin_notes' => 'Admin Notes',
-              'gross_income' => 'Gross Income',
-              'created_by_admin' => 'Created By Admin',
-              'status' => 'Status',
+      expect {
+        Parent.df_import(
+          child_info_csv,
+          {
+            uniques: [:firstname, :children_firstname],
+            required: [],
+            all: [:firstname, :lastname, :address, :address_line_2, :city, :province, :postal_code,
+                  :telephone_number, :email, :admin_notes, :gross_income, :created_by_admin, :status,
+              { children: [:firstname, :lastname, :dateofbirth, :gender] }],
+            # An alias for each incoming column
+            as: {
+                  'parent_1_firstname' => 'Firstname',
+                  'parent_1_lastname' => 'Lastname',
+                  'address' => 'Address',
+                  'address_line_2' => 'Address Line 2',
+                  'city' => 'City',
+                  'province' => 'Province',
+                  'postal_code' => 'Postal Code',
+                  'telephone_number' => 'Telephone Number',
+                  'email' => 'Email',
+                  'admin_notes' => 'Admin Notes',
+                  'gross_income' => 'Gross Income',
+                  'created_by_admin' => 'Created By Admin',
+                  'status' => 'Status',
 
-              'firstname' => 'Children Firstname',
-              'lastname' => 'Children Lastname',
-              'dateofbirth' => 'Children Dateofbirth',
-              'gender' => 'Children Gender'
-            }
-      }.freeze) }.not_to raise_error
+                  'firstname' => 'Children Firstname',
+                  'lastname' => 'Children Lastname',
+                  'dateofbirth' => 'Children Dateofbirth',
+                  'gender' => 'Children Gender'
+                }
+          }.freeze
+        )
+      }.not_to raise_error
 
-      parents = Parent.order(:id).pluck(:firstname, :lastname,
-        :address, :address_line_2, :city, :province, :postal_code,
-        :telephone_number, :email, :admin_notes, :gross_income, :created_by_admin, :status)
+      parents = Parent.order(:id)
+                      .pluck(:firstname, :lastname, :address, :address_line_2, :city, :province, :postal_code,
+                             :telephone_number, :email, :admin_notes, :gross_income, :created_by_admin, :status)
       expect(parents.count).to eq(1)
       expect(parents).to eq([['Nav', 'Deo',
         'College Road', nil, 'Alliston', 'BC', 'N4c 6u9',
-        '500 000 0000', 'nav@prw.com', 'HAPPY', 13917, true, ' Approved ']])
+        '500 000 0000', 'nav@prw.com', 'HAPPY', 13_917, true, ' Approved ']])
 
       children = Child.order(:id).pluck(:firstname, :lastname, :dateofbirth, :gender)
       expect(children.count).to eq(1)
-      expect(children).to eq([["Sami", "Kidane", Date.new(2009, 10, 10), 'Male']])
+      expect(children).to eq([['Sami', 'Kidane', Date.new(2009, 10, 10), 'Male']])
     end
   end
 end

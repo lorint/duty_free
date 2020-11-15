@@ -24,10 +24,12 @@ Layout/LineLength:
 Metrics/AbcSize:
   Exclude:
     - spec/test_app/db/migrate/*
-  Max: 358
+  Max: 368
 
 Metrics/BlockLength:
-  Max: 195
+  Max: 198
+  Exclude:
+    - spec/models/northwind_spec.rb
 
 Metrics/BlockNesting:
   Max: 6
@@ -41,16 +43,23 @@ Metrics/CyclomaticComplexity:
   Max: 121
 
 Metrics/MethodLength:
-  Max: 245
+  Max: 250
+  Exclude:
+    - spec/test_app/db/migrate/*
+    - spec/models/northwind_spec.rb
 
 Metrics/ModuleLength:
-  Max: 435
+  Max: 437
 
 Metrics/ParameterLists:
   Max: 10
 
 Metrics/PerceivedComplexity:
   Max: 133
+
+Style/FrozenStringLiteralComment:
+  Exclude:
+    - 'gemfiles/*.gemfile'
 
 # All other cops, simply to enable them:
 

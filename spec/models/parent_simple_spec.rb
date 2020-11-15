@@ -49,12 +49,12 @@ RSpec.describe Parent, type: :model do
   end
 
   it 'should be able to import from CSV data' do
-    csv = <<-CSV
-parent_1_firstname,parent_1_lastname,address,childfirstname,childlastname,childdateofbirth
-John,Wilson,68 Bell Road,Jessica,Wilson,2002-11-11
-John,Wilson,68 Bell Road,Josh,Wilson,2006-10-01
-      CSV
-    child_info_csv = CSV.new(csv)
+    csv_in = <<~CSV
+      parent_1_firstname,parent_1_lastname,address,childfirstname,childlastname,childdateofbirth
+      John,Wilson,68 Bell Road,Jessica,Wilson,2002-11-11
+      John,Wilson,68 Bell Road,Josh,Wilson,2006-10-01
+    CSV
+    child_info_csv = CSV.new(csv_in)
 
     # Import CSV data
     # ---------------
@@ -76,10 +76,10 @@ John,Wilson,68 Bell Road,Josh,Wilson,2006-10-01
     # Export current data to CSV
     # --------------------------
     # Using #df_export, an array is returned, which is easily converted back to CSV
-    exported = CSV.generate(force_quotes: false) do |csv|
-      Parent.df_export.each { |row| csv << row }
+    exported_csv = CSV.generate(force_quotes: false) do |csv_out|
+      Parent.df_export.each { |row| csv_out << row }
     end
     # The generated CSV exactly matches the original which we started with
-    expect(exported).to eq(csv)
+    expect(exported_csv).to eq(csv_in)
   end
 end

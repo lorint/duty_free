@@ -79,8 +79,8 @@ module DutyFree
 
       # With an array of incoming data, the first row having column names, perform the import
       def df_import(data, import_template = nil)
-        self.instance_variable_set(:@defined_uniques, nil)
-        self.instance_variable_set(:@valid_uniques, nil)
+        instance_variable_set(:@defined_uniques, nil)
+        instance_variable_set(:@valid_uniques, nil)
 
         import_template ||= if constants.include?(:IMPORT_TEMPLATE)
                               self::IMPORT_TEMPLATE
@@ -105,6 +105,7 @@ module DutyFree
         devise_class = ''
         ret = nil
 
+        # Multi-tenancy gem Apartment can be used if there are separate schemas per tenant
         reference_models = if Object.const_defined?('Apartment')
                              Apartment.excluded_models
                            else
@@ -121,10 +122,13 @@ module DutyFree
 
         # Did they give us a filename?
         if data.is_a?(String)
-          data = if data.length <= 4096 && data.split('\n').length == 1
+          # Filenames with full paths can not be longer than 4096 characters, and can not
+          # include newline characters
+          data = if data.length <= 4096 && !data.index('\n')
                    File.open(data)
                  else
-                   # Hope that other multi-line strings might be CSV data
+                   # Any multi-line string is likely CSV data
+                   # %%% Test to see if TAB characters are present on the first line, instead of commas
                    CSV.new(data)
                  end
         end
@@ -143,8 +147,15 @@ module DutyFree
         # Will show as just one transaction when using auditing solutions such as PaperTrail
         ActiveRecord::Base.transaction do
           # Check to see if they want to do anything before the whole import
-          if before_import ||= (import_template[:before_import]) # || some generic before_import)
-            before_import.call(data)
+          # First if defined in the import_template, then if there is a method in the class,
+          # and finally (not yet implemented) a generic global before_import
+          my_before_import = import_template[:before_import]
+          my_before_import ||= respond_to?(:before_import) && method(:before_import)
+          # my_before_import ||= some generic my_before_import
+          if my_before_import
+            last_arg_idx = my_before_import.parameters.length - 1
+            arguments = [data, import_template][0..last_arg_idx]
+            data = ret if (ret = my_before_import.call(*arguments)).is_a?(Enumerable)
           end
           col_list = nil
           data.each_with_index do |row, row_num|
@@ -178,8 +189,8 @@ module DutyFree
               # %%% Will the uniques saved into @defined_uniques here just get redefined later
               # after the next line, the map! with clean to change out the alias names?  So we can't yet set
               # col_list?
-              defined_uniques(uniques, cols, cols.join('|'), starred)
               cols.map! { |col| ::DutyFree::Util._clean_name(col, import_template[:as]) } # %%%
+              defined_uniques(uniques, cols, cols.join('|'), starred)
               # Make sure that at least half of them match what we know as being good column names
               template_column_objects = ::DutyFree::Extensions._recurse_def(self, import_template[:all], import_template).first
               cols.each_with_index do |col, idx|
@@ -187,9 +198,7 @@ module DutyFree
                 keepers[idx] = template_column_objects.find { |col_obj| col_obj.titleize == col }
                 # puts "Could not find a match for column #{idx + 1}, #{col}" if keepers[idx].nil?
               end
-              if keepers.length < (cols.length / 2) - 1
-                raise ::DutyFree::LessThanHalfAreMatchingColumnsError, I18n.t('import.altered_import_template_coumns')
-              end
+              raise ::DutyFree::LessThanHalfAreMatchingColumnsError, I18n.t('import.altered_import_template_coumns') if keepers.length < (cols.length / 2) - 1
 
               # Returns just the first valid unique lookup set if there are multiple
               valid_unique = find_existing(uniques, cols, starred, import_template, keepers, false)
@@ -206,14 +215,11 @@ module DutyFree
                 s << if v.last.is_a?(Array)
                        v.last[0].where(v.last[1] => row[v.last[2]]).limit(1).pluck(MAX_ID).first.to_s
                      else
-                       binding.pry if v.last.nil?
                        row[v.last].to_s
                      end
               end
               # Check to see if they want to preprocess anything
-              if @before_process ||= import_template[:before_process]
-                existing_unique = @before_process.call(valid_unique, existing_unique)
-              end
+              existing_unique = @before_process.call(valid_unique, existing_unique) if @before_process ||= import_template[:before_process]
               obj = if existing.include?(existing_unique)
                       find(existing[existing_unique])
                     else
@@ -227,7 +233,6 @@ module DutyFree
               sub_objects = {}
               this_path = nil
               keepers.each do |key, v|
-                klass = nil
                 next if v.nil?
 
                 # Not the same as the last path?
@@ -242,7 +247,6 @@ module DutyFree
                       modded_obj.save if sub_obj&.valid?
                     end
                   elsif sub_obj&.valid?
-                    # binding.pry if sub_obj.is_a?(Employee) && sub_obj.first_name == 'Andrew'
                     sub_obj.save
                   end
                 end
@@ -285,28 +289,20 @@ module DutyFree
                                      # such as importing orders and having employees come along :)
                                      # if sub_obj.class == klass
                                      #   trim_prefix = ''
-                                     #   # binding.pry
                                      # end
                                      # %%% Maybe instead of passing in "klass" we can give the belongs_to association and build through that instead,
                                      # allowing us to nix the klass.new(criteria) line below.
                                      trim_prefix = v.titleize[0..-(v.name.length + 2)]
                                      trim_prefix << ' ' unless trim_prefix.blank?
-                                     if klass == sub_obj.class # Self-referencing thing pointing to us?
-                                       # %%% This should be more general than just for self-referencing things.
-                                       sub_cols = cols.map { |c| c.start_with?(trim_prefix) ? c[trim_prefix.length..-1] : nil }
-                                       # assoc
-                                       sub_bt, criteria = klass.find_existing(uniques, sub_cols, starred, import_template, keepers, nil, row, klass, all, '')
-                                     else
-                                       sub_bt, criteria = klass.find_existing(uniques, cols, starred, import_template, keepers, nil, row, klass, all, trim_prefix)
-                                     end
+                                     # if klass == sub_obj.class # Self-referencing thing pointing to us?
+                                     # %%% This should be more general than just for self-referencing things.
+                                     sub_bt, criteria = klass.find_existing(uniques, cols, starred, import_template, keepers, nil, row, klass, all, trim_prefix)
                                    rescue ::DutyFree::NoUniqueColumnError
                                      sub_unique = nil
                                    end
                                    # Self-referencing shouldn't build a new one if it couldn't find one
-                                   # %%% Can criteria really ever be nil anymore?
-                                   unless klass == sub_obj.class && criteria.empty?
-                                     sub_bt ||= klass.new(criteria || {})
-                                   end
+                                   # %%% Can criteria really ever be empty anymore?
+                                   sub_bt ||= klass.new(criteria || {}) unless klass == sub_obj.class && criteria.empty?
                                    sub_obj.send("#{path_part}=", sub_bt)
                                    sub_bt
                                  end
@@ -326,8 +322,6 @@ module DutyFree
                       trim_prefix = v.titleize[start..-(v.name.length + 2)]
                       trim_prefix << ' ' unless trim_prefix.blank?
                       klass = sub_next.klass
-                      # binding.pry if klass.name == 'OrderDetail'
-
                       # assoc.inverse_of is the belongs_to side of the has_many train we came in here on.
                       sub_hm, criteria = klass.find_existing(uniques, cols, starred, import_template, keepers, assoc.inverse_of, row, sub_next, all, trim_prefix)
 
@@ -347,14 +341,11 @@ module DutyFree
                       sub_objects[this_path] = sub_next if this_path.present?
                     end
                   end
-                  # binding.pry if sub_obj.reports_to
-                  sub_obj = sub_next #if sub_next
+                  sub_obj = sub_next # if sub_next
                 end
-                # binding.pry if sub_obj.nil?
                 next if sub_obj.nil?
 
-                sym = "#{v.name}=".to_sym
-                next unless sub_obj.respond_to?(sym)
+                next unless sub_obj.respond_to?(sym = "#{v.name}=".to_sym)
 
                 col_type = (sub_class = sub_obj.class).columns_hash[v.name.to_s]&.type
                 if col_type.nil? && (virtual_columns = import_template[:virtual_columns]) &&
@@ -364,16 +355,15 @@ module DutyFree
                 if col_type == :boolean
                   if row[key].nil?
                     # Do nothing when it's nil
-                  elsif %w[yes y].include?(row[key]&.downcase) # Used to cover 'true', 't', 'on'
+                  elsif %w[true t yes y].include?(row[key]&.downcase) # Used to cover 'on'
                     row[key] = true
-                  elsif %w[no n].include?(row[key]&.downcase) # Used to cover 'false', 'f', 'off'
+                  elsif %w[false f no n].include?(row[key]&.downcase) # Used to cover 'off'
                     row[key] = false
                   else
                     row_errors[v.name] ||= []
                     row_errors[v.name] << "Boolean value \"#{row[key]}\" in column #{key + 1} not recognized"
                   end
                 end
-                # binding.pry if v.name.to_s == 'first_name' && sub_obj.first_name == 'Nancy'
                 sub_obj.send(sym, row[key])
                 # else
                 #   puts "  #{sub_class.name} doesn't respond to #{sym}"
@@ -423,10 +413,18 @@ module DutyFree
             s += v.last[1..-1].map { |line_num| { line_num => v.first } } if v.last.count > 1
             s
           end
-          # Check to see if they want to do anything after the import
           ret = { inserted: inserts, updated: updates, duplicates: duplicates, errors: errors }
-          if @after_import ||= (import_template[:after_import]) # || some generic after_import)
-            ret = ret2 if (ret2 = @after_import.call(ret)).is_a?(Hash)
+
+          # Check to see if they want to do anything after the import
+          # First if defined in the import_template, then if there is a method in the class,
+          # and finally (not yet implemented) a generic global after_import
+          my_after_import = import_template[:after_import]
+          my_after_import ||= respond_to?(:after_import) && method(:after_import)
+          # my_after_import ||= some generic my_after_import
+          if my_after_import
+            last_arg_idx = my_after_import.parameters.length - 1
+            arguments = [ret][0..last_arg_idx]
+            ret = ret2 if (ret2 = my_after_import.call(*arguments)).is_a?(Hash)
           end
         end
         ret
@@ -435,8 +433,66 @@ module DutyFree
       # For use with importing, based on the provided column list calculate all valid combinations
       # of unique columns.  If there is no valid combination, throws an error.
       # Returns an object found by this means.
-      def find_existing(uniques, cols, starred, import_template, keepers, train_we_came_in_here_on, row = nil, obj = nil, all = nil, trim_prefix = '')
-        col_name_offset = trim_prefix.length
+      def find_existing(uniques, cols, starred, import_template, keepers, train_we_came_in_here_on,
+                        row = nil, klass_or_collection = nil, all = nil, trim_prefix = '')
+        unless trim_prefix.blank?
+          cols = cols.map { |c| c.start_with?(trim_prefix) ? c[trim_prefix.length..-1] : nil }
+          starred = starred.each_with_object([]) do |v, s|
+            s << v[trim_prefix.length..-1] if v.start_with?(trim_prefix)
+            s
+          end
+        end
+
+        # First add in foreign key stuff we can find from belongs_to associations (other than the
+        # one we might have arrived here upon).
+        criteria = {}
+        bt_criteria = {}
+        bt_criteria_all_nil = true
+        bt_col_indexes = []
+        available_bts = []
+        only_valid_uniques = (train_we_came_in_here_on == false)
+        uniq_lookups = {}
+        # %%% Ultimately may consider making this recursive
+        bts = reflect_on_all_associations.each_with_object([]) do |sn_assoc, s|
+          if sn_assoc.is_a?(ActiveRecord::Reflection::BelongsToReflection) &&
+             (!train_we_came_in_here_on || sn_assoc != train_we_came_in_here_on)
+            # %%% Make sure there's a starred column we know about from this one
+            uniq_lookups[sn_assoc.foreign_key] = nil if only_valid_uniques
+            s << sn_assoc
+          end
+          s
+        end
+        bts.each do |sn_bt|
+          # This search prefix becomes something like "Order Details Product "
+          cols.each_with_index do |bt_col, idx|
+            next if bt_col_indexes.include?(idx) ||
+                    !bt_col&.start_with?(trim_prefix + "#{sn_bt.name.to_s.underscore.tr('_', ' ').titleize} ")
+
+            available_bts << bt_col
+            fk_id = if row
+                      # Max ID so if there are multiple, only the most recent one is picked.
+                      # %%% Need to stack these up in case there are multiple
+                      # (like first_name, last_name on a referenced employee)
+                      sn_bt.klass.where(keepers[idx].name => row[idx]).limit(1).pluck(MAX_ID).first
+                    else
+                      [sn_bt.klass, keepers[idx].name, idx]
+                    end
+            if fk_id
+              bt_col_indexes << idx
+              bt_criteria_all_nil = false
+            end
+            bt_criteria[(fk_name = sn_bt.foreign_key)] = fk_id
+            # Add to our criteria if this belongs_to is required
+            # %%% Rails older than 5.0 handles this stuff differently!
+            if sn_bt.options[:optional] || !sn_bt.klass.belongs_to_required_by_default
+              # Should not have this fk as a requirement
+              uniq_lookups.delete(fk_name) if only_valid_uniques && uniq_lookups.include?(fk_name)
+            else # Add to the criteria
+              criteria[fk_name] = fk_id
+            end
+          end
+        end
+
         @valid_uniques ||= {} # Fancy memoisation
         col_list = cols.join('|')
         unless (vus = @valid_uniques[col_list])
@@ -455,7 +511,7 @@ module DutyFree
           vus = defined_uniques(uniques, cols, nil, starred).select do |k, _v|
             is_good = true
             k.each do |k_col|
-              unless k_col.start_with?(trim_prefix) && available.include?(k_col[col_name_offset..-1])
+              unless available.include?(k_col) || available_bts.include?(k_col)
                 is_good = false
                 break
               end
@@ -466,109 +522,55 @@ module DutyFree
         end
 
         # Make sure they have at least one unique combination to take cues from
-        ret = {}
         unless vus.empty? # raise NoUniqueColumnError.new(I18n.t('import.no_unique_column_error'))
           # Convert the first entry to a simplified hash, such as:
           #   {[:investigator_institutions_name, :investigator_institutions_email] => [8, 9], ...}
           #     to {:name => 8, :email => 9}
           key, val = vus.first
           key.each_with_index do |k, idx|
-            ret[k[col_name_offset..-1].downcase.tr(' ', '_').to_sym] = val[idx] if k.start_with?(trim_prefix)
+            next if available_bts.include?(k) # These will be provided in criteria, and not uniq_lookups
+
+            # uniq_lookups[k[trim_prefix.length..-1].downcase.tr(' ', '_').to_sym] = val[idx] if k.start_with?(trim_prefix)
+            uniq_lookups[k.downcase.tr(' ', '_').to_sym] = val[idx]
           end
         end
-
-        # %%% If uniqueness is based on something else hanging out on a belongs_to then we're pretty hosed.
-        # (Case in point, importing Order with related Order Detail and Product, and then Product needs to
-        # be found or built first before OrderDetail.)
-        # Might have to do a deferred save kind of thing, and also make sure the product stuff came first
-        # before the other stuff
 
         # Find by all corresponding columns
 
-        # Add in any foreign key stuff we can find from other belongs_to associations
-        # %%% This is starting to look like the other BelongsToAssociation code above around line
-        # 697, so it really needs to be turned into something recursive instead of this two-layer
-        # thick thing at best.
-
-        # First check the belongs_tos
-        criteria = {}
-        bt_criteria = {}
-        bt_criteria_all_nil = true
-        bt_col_indexes = []
-        only_valid_uniques = (train_we_came_in_here_on == false)
-        bts = reflect_on_all_associations.each_with_object([]) do |sn_assoc, s|
-          if sn_assoc.is_a?(ActiveRecord::Reflection::BelongsToReflection) &&
-             (!train_we_came_in_here_on || sn_assoc != train_we_came_in_here_on) # &&
-             # sn_assoc.klass != self # Omit stuff pointing to us (like self-referencing stuff)
-            # %%% Make sure there's a starred column we know about from this one
-            ret[sn_assoc.foreign_key] = nil if only_valid_uniques
-            s << sn_assoc
-          end
-          s
-        end
-        bts.each do |sn_bt|
-          # This search prefix becomes something like "Order Details Product "
-          # binding.pry
-          cols.each_with_index do |bt_col, idx|
-            next if bt_col_indexes.include?(idx) ||
-                    !bt_col&.start_with?(trim_prefix + "#{sn_bt.name.to_s.underscore.tr('_', ' ').titleize} ")
-
-            fk_id = if row
-                      # Max ID so if there are multiple, only the most recent one is picked.
-                      # %%% Need to stack these up in case there are multiple
-                      # (like first_name, last_name on a referenced employee)
-                      # binding.pry
-                      sn_bt.klass.where(keepers[idx].name => row[idx]).limit(1).pluck(MAX_ID).first
-                    else
-                      [sn_bt.klass, keepers[idx].name, idx]
-                    end
-            if fk_id
-              bt_col_indexes << idx
-              bt_criteria_all_nil = false
-            end
-            bt_criteria[(fk_name = sn_bt.foreign_key)] = fk_id
-            # Add to our criteria if this belongs_to is required
-            # %%% Rails older than 5.0 handles this stuff differently!
-            unless sn_bt.options[:optional] || !sn_bt.klass.belongs_to_required_by_default
-              criteria[fk_name] = fk_id
-            else # Should not have this fk as a requirement
-              ret.delete(fk_name) if only_valid_uniques && ret.include?(fk_name)
-            end
-          end
-        end
-
         new_criteria_all_nil = bt_criteria_all_nil
-        if train_we_came_in_here_on != false
-          criteria = ret.each_with_object({}) do |v, s|
-            next if bt_col_indexes.include?(v.last)
+        unless only_valid_uniques
+          uniq_lookups.each do |k, v|
+            next if bt_col_indexes.include?(v)
 
-            new_criteria_all_nil = false if (s[v.first.to_sym] = row[v.last])
-            s
+            if (row_value = row[v])
+              new_criteria_all_nil = false
+              criteria[k.to_sym] = row_value
+            end
           end
         end
 
         # Short-circuiting this to only get back the valid_uniques?
-        return ret.merge(criteria) if only_valid_uniques
+        return uniq_lookups.merge(criteria) if only_valid_uniques
 
-        # binding.pry if obj.is_a?(Order)
         # If there's nothing to match upon then we're out
         return [nil, {}] if new_criteria_all_nil
 
         # With this criteria, find any matching has_many row we can so we can update it
-        sub_hm = obj.find do |hm_obj|
+        # First try looking it up through ActiveRecord
+        found_object = klass_or_collection.find_by(criteria)
+        # If not successful, such as when fields are exposed via helper methods instead of being
+        # real columns in the database tables, try this more intensive routine.
+        found_object ||= klass_or_collection.find do |obj|
           is_good = true
           criteria.each do |k, v|
-            if hm_obj.send(k).to_s != v.to_s
+            if obj.send(k).to_s != v.to_s
               is_good = false
               break
             end
           end
           is_good
         end
-        # Try looking it up through ActiveRecord
-        # %%% Should we perhaps do this first before the more intensive find routine above?
-        sub_hm = obj.find_by(criteria) if sub_hm.nil?
-        [sub_hm, criteria.merge(bt_criteria)]
+        [found_object, criteria.merge(bt_criteria)]
       end
 
     private
@@ -601,7 +603,10 @@ module DutyFree
               end
             end
           end
-          (starred - utilised.keys).each { |star| defined_uniq[[star]] = [cols.index(star)] }
+          if defined_uniq.empty?
+            (starred - utilised.keys).each { |star| defined_uniq[[star]] = [cols.index(star)] }
+            # %%% puts "Tried to establish #{defined_uniq.inspect}"
+          end
           @defined_uniques[col_list] = defined_uniq
         end
         defined_uniq

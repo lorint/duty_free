@@ -6,12 +6,13 @@ module Family
     has_many :children, class_name: '::Family::Family', foreign_key: :parent_id
     has_many :grandsons, through: :family_lines
     has_one :mentee, class_name: '::Family::Family', foreign_key: :partner_id
-    if ActiveRecord.gem_version >= Gem::Version.new('5.0')
+
+    if ActiveRecord.version >= Gem::Version.new('5.0')
       belongs_to :parent, class_name: '::Family::Family', foreign_key: :parent_id, optional: true
     else
       belongs_to :parent, class_name: '::Family::Family', foreign_key: :parent_id
     end
-    if ActiveRecord.gem_version >= Gem::Version.new('5.0')
+    if ActiveRecord.version >= Gem::Version.new('5.0')
       belongs_to :mentor, class_name: '::Family::Family', foreign_key: :partner_id, optional: true
     else
       belongs_to :mentor, class_name: '::Family::Family', foreign_key: :partner_id

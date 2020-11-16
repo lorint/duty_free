@@ -40,15 +40,20 @@ module DutyFree
       assocs = {}
       this_klass.reflect_on_all_associations.each do |assoc|
         # PolymorphicReflection AggregateReflection RuntimeReflection
-        is_belongs_to = assoc.is_a?(ActiveRecord::Reflection::BelongsToReflection)
+        is_belongs_to = assoc.belongs_to? # is_a?(ActiveRecord::Reflection::BelongsToReflection)
         # Figure out if it's belongs_to, has_many, or has_one
+        # HasAndBelongsToManyReflection
         belongs_to_or_has_many =
           if is_belongs_to
             'belongs_to'
-          elsif (is_habtm = assoc.is_a?(ActiveRecord::Reflection::HasAndBelongsToManyReflection))
+          elsif (is_habtm = assoc.respond_to?(:macro) ? (assoc.macro == :has_and_belongs_to_many) : assoc.is_a?(ActiveRecord::Reflection::HasAndBelongsToManyReflection))
             'has_and_belongs_to_many'
           else
-            (assoc.is_a?(ActiveRecord::Reflection::HasManyReflection) ? 'has_many' : 'has_one')
+            if assoc.respond_to?(:macro) ? (assoc.macro == :has_many) : assoc.is_a?(ActiveRecord::Reflection::HasManyReflection)
+              'has_many'
+            else
+              'has_one'
+            end
           end
         # Always process belongs_to, and also process has_one and has_many if do_has_many is chosen.
         # Skip any HMT or HABTM. (Maybe break out HABTM into a combo HM and BT in the future.)
@@ -178,7 +183,8 @@ module DutyFree
     # Find belongs_tos for this model to one more more other klasses
     def self._find_belongs_tos(klass, to_klass, errored_assocs)
       klass.reflect_on_all_associations.each_with_object([]) do |bt_assoc, s|
-        next unless bt_assoc.is_a?(ActiveRecord::Reflection::BelongsToReflection) && !errored_assocs.include?(bt_assoc)
+        # .is_a?(ActiveRecord::Reflection::BelongsToReflection)
+        next unless bt_assoc.belongs_to? && !errored_assocs.include?(bt_assoc)
 
         begin
           s << bt_assoc if !bt_assoc.polymorphic? && bt_assoc.klass == to_klass

@@ -63,6 +63,39 @@ module DutyFree
 end
 
 ActiveSupport.on_load(:active_record) do
+  # 
+  #   klasses = [Float, BigDecimal]
+  # # Ruby 2.4+ unifies Fixnum & Bignum into Integer.
+  # if 0.class == Integer
+  #   klasses << Integer
+  # else
+  #   klasses << Fixnum << Bignum
+  # end
+
+  # klasses.each do |klass|
+
+  # Rails < 4.2 is not innately compatible with Ruby 2.4 and later, and comes up with:
+  # "TypeError: Cannot visit Integer" unless we patch like this:
+  unless ::Gem::Version.new(RUBY_VERSION) < ::Gem::Version.new('2.4')
+    unless Arel::Visitors::DepthFirst.private_instance_methods.include?(:visit_Integer)
+      module Arel
+        module Visitors
+          class DepthFirst < Arel::Visitors::Visitor
+            alias :visit_Integer :terminal
+          end
+
+          class Dot < Arel::Visitors::Visitor
+            alias :visit_Integer :visit_String
+          end
+
+          class ToSql < Arel::Visitors::Visitor
+            alias :visit_Integer :literal
+          end
+        end
+      end
+    end
+  end
+
   include ::DutyFree::Extensions
 end
 

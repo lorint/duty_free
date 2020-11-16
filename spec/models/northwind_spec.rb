@@ -15,7 +15,15 @@ class Employee < ActiveRecord::Base
 
   # validates_presence_of :hire_date
 
-  belongs_to :reports_to, class_name: name, required: false
+  # Can't do required: false in AR < 4.2
+  if ActiveRecord.version < Gem::Version.new('4.2')
+    belongs_to :reports_to, class_name: name
+  else
+    # Note that required: false is available from Rails 4.2 onwards, and works the same as
+    # optional: true in Rails 5.0 and later.
+    belongs_to :reports_to, class_name: name, required: false
+  end
+
   has_many :orders
 end
 class Customer < ActiveRecord::Base
@@ -48,10 +56,10 @@ end
 RSpec.describe Employee, type: :model do
   def clear_table(model, starting_id = 1)
     model.destroy_all
-    if model.count == 0 && ActiveRecord::Base.connection.class.name == 'ActiveRecord::ConnectionAdapters::PostgreSQLAdapter'
-      ActiveRecord::Base.connection.execute("SELECT setval('#{model.table_name}_#{model.primary_key}_seq', #{starting_id}, false);")
-      # x = ActiveRecord::Base.connection.execute "SELECT c.relname FROM pg_class c WHERE c.relkind = 'S';"
-    end
+    return unless model.count == 0 && ActiveRecord::Base.connection.class.name == 'ActiveRecord::ConnectionAdapters::PostgreSQLAdapter'
+
+    ActiveRecord::Base.connection.execute("SELECT setval('#{model.table_name}_#{model.primary_key}_seq', #{starting_id}, false);")
+    # x = ActiveRecord::Base.connection.execute "SELECT c.relname FROM pg_class c WHERE c.relkind = 'S';"
   end
 
   before(:each) do
@@ -81,7 +89,7 @@ RSpec.describe Employee, type: :model do
       ['Laura', 'Callahan', 'Inside Sales Coordinator', 'Ms.', '1958-01-09', '1994-03-05', '4726 - 11th Ave. N.E.', 'Seattle', 'WA', '98105', 'USA', '(206) 555-1189', '2344', 'Laura received a BA in psychology from the University of Washington.  She has also completed a course in business French.  She reads and writes French.', 'Andrew', 'Fuller'],
       ['Anne', 'Dodsworth', 'Sales Representative', 'Ms.', '1966-01-27', '1994-11-15', '7 Houndstooth Rd.', 'London', '', 'WG2 7LT', 'UK', '(71) 555-4444', '452', 'Anne has a BA degree in English from St. Lawrence College.  She is fluent in French and German.', 'Steven', 'Buchanan']],
       {
-        uniques: [:first_name, :last_name], # :reports_to_first_name],
+        uniques: [:first_name, :last_name, :reports_to_first_name],
         all: [:first_name, :last_name, :title, :title_of_courtesy, :birth_date, :hire_date, :address, :city, :region, :postal_code, :country, :home_phone, :extension, :notes,
           { reports_to: [:first_name, :last_name] }
         ],
@@ -2462,7 +2470,7 @@ RSpec.describe Employee, type: :model do
         # rubocop:enable Style/AsciiComments, Layout/LineLength, Style/TrailingCommaInArrayLiteral
       ],
       {
-        uniques: [[:id], [:customer_company_name, :employee_first_name, :order_date]],
+        uniques: [[:id], [:customer_company_name, :employee_first_name, :order_date, :order_details_product_product_name]],
         required: [:customer_company_name, :employee_first_name, :order_date],
         all: [
           { customer: [:company_name] },
@@ -2537,7 +2545,10 @@ RSpec.describe Employee, type: :model do
     # Quantity of product bought by all customers
     # The two customers who haven't bought anything (FISSA and PARIS) show nil since SUM() returns
     # NULL in the absence of data.
-    customer_order_details = Customer.left_joins(orders: :order_details)
+    # Note that the two hacked .joins clauses are to support AR < 5.0, and provides the exact same logic
+    # as doing:  Customer.left_joins(orders: :order_details)
+    customer_order_details = Customer.joins('LEFT OUTER JOIN orders ON orders.customer_id = customers.id')
+                                     .joins('LEFT OUTER JOIN order_details ON order_details.order_id = orders.id')
                                      .group('customers.id', 'customers.company_code')
                                      .order('customers.id')
                                      .pluck('customers.company_code', Arel.sql('SUM(order_details.quantity)'))
@@ -2583,12 +2594,20 @@ RSpec.describe Employee, type: :model do
     # $334,198.50 or $1,354,458.59
     expect(OrderDetail.sum('quantity * unit_price * 100').to_i).to eq(33_419_850) # 135_445_859
 
-    -- 'EXTRACT(YEAR FROM orders.order_date)::int AS year'
-    extract_year = "CAST(strftime('%Y', orders.order_date) AS INTEGER) AS year"
-    totals_per_year = OrderDetail.joins(:order).group(1).order(1).pluck(
-      Arel.sql(extract_year),
-      Arel.sql('SUM(order_details.quantity * order_details.unit_price * 100) AS total')
-    )
+    extract_year = case ActiveRecord::Base.connection.class.name
+                   when 'ActiveRecord::ConnectionAdapters::PostgreSQLAdapter'
+                     'EXTRACT(YEAR FROM orders.order_date)::int'
+                   when 'ActiveRecord::ConnectionAdapters::SQLite3Adapter'
+                     "CAST(strftime('%Y', orders.order_date) AS INTEGER)"
+                     # else
+                     # MySQL, are we?
+                   end
+    # Can do .group(1).order(1) when we support AR >= 4.2
+    totals_per_year = OrderDetail.joins(:order).group(Arel.sql(extract_year)).order(Arel.sql(extract_year))
+                                 .pluck(
+                                    Arel.sql("#{extract_year} AS year"),
+                                    Arel.sql('SUM(order_details.quantity * order_details.unit_price * 100) AS total')
+                                  )
     expect(totals_per_year.map { |x| x.map(&:to_i) }).to eq([
       # for the subset of data   for the entire set of data, all orders
       [1996, 22_629_850], #      [1996, 22_629_850], # $226,298.50

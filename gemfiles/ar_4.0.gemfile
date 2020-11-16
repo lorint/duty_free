@@ -4,7 +4,7 @@ source 'https://rubygems.org'
 
 ruby '2.6.3'
 
-gem 'activerecord', '~> 4.2.11.3'
+gem 'activerecord', '~> 4.0.13'
 
 gem 'database_cleaner', '~> 1.6'
 gem 'ffaker', '~> 2.11'

@@ -5,7 +5,7 @@ class Vehicle < ActiveRecord::Base
   # and "Bicycle Transpo"
   # update_duty_free friendly_suffix: "Transpo"
 
-  if ActiveRecord.gem_version >= Gem::Version.new('5.0')
+  if ActiveRecord.version >= Gem::Version.new('5.0')
     belongs_to :owner, class_name: 'Person', optional: true
   else
     belongs_to :owner, class_name: 'Person'

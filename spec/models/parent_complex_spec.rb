@@ -9,7 +9,13 @@ require 'csv'
 # Two without IMPORT_TEMPLATEs
 
 class Parent < ActiveRecord::Base
-  has_many :children, dependent: :destroy
+  if ActiveRecord.version >= ::Gem::Version.new('4.2')
+    has_many :children, dependent: :destroy
+  else
+    # Rails before 4.2 didn't automatically create inverse_of entries on associations,
+    # so we'll need to do that dirty work ourselves
+    has_many :children, inverse_of: :parent, dependent: :destroy
+  end
 
   def self.import(file)
     df_import(file)

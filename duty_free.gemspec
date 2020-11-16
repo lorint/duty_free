@@ -9,9 +9,7 @@ Gem::Specification.new do |s|
   s.platform = Gem::Platform::RUBY
   s.summary = 'Import and Export Data'
   s.description = <<~EOS
-    An ActiveRecord extension that simplifies importing and exporting of data
-    stored in one or more models.  Source and destination can be CSV, XLS,
-    XLSX, ODT, HTML tables, or simple Ruby arrays.
+    Simplify data imports and exports with this slick ActiveRecord extension
   EOS
   s.homepage = 'https://github.com/lorint/duty_free'
   s.authors = ['Lorin Thwaits']
@@ -25,9 +23,9 @@ Gem::Specification.new do |s|
   s.require_paths = ['lib']
 
   s.required_rubygems_version = '>= 1.3.6'
-  s.required_ruby_version = '>= 2.4.0'
+  s.required_ruby_version = '>= 2.3.5'
 
-  s.add_dependency 'activerecord', ['>= 4.2', '< 6.0']
+  s.add_dependency 'activerecord', ['>= 4.0', '< 6.1']
 
   s.add_development_dependency 'appraisal', '~> 2.2'
   s.add_development_dependency 'pry-byebug', '~> 3.7.0'
@@ -40,7 +38,7 @@ Gem::Specification.new do |s|
   s.add_development_dependency 'rubocop', '~> 0.89.1'
   s.add_development_dependency 'rubocop-rspec', '~> 1.42.0'
 
-  s.add_development_dependency 'mysql2', '~> 0.5'
+  # s.add_development_dependency 'mysql2', '~> 0.5'
   s.add_development_dependency 'pg', '>= 0.18', '< 2.0'
   s.add_development_dependency 'sqlite3', '~> 1.4'
 end

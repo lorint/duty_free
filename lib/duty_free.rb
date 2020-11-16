@@ -1,5 +1,38 @@
 # frozen_string_literal: true
 
+require 'active_record/version'
+
+# ActiveRecord before 4.0 didn't have #version
+unless ActiveRecord.respond_to?(:version)
+  module ActiveRecord
+    def self.version
+      ::Gem::Version.new(ActiveRecord::VERSION::STRING)
+    end
+  end
+end
+
+# In ActiveSupport older than 5.0, the duplicable? test tries to new up a BigDecimal,
+# and Ruby 2.6 and later deprecates #new.  This removes the warning from BigDecimal.
+require 'bigdecimal'
+if ActiveRecord.version < ::Gem::Version.new('5.0') &&
+   ::Gem::Version.new(RUBY_VERSION) >= ::Gem::Version.new('2.6')
+  def BigDecimal.new(*args, **kwargs)
+    BigDecimal(*args, **kwargs)
+  end
+end
+
+# Allow Rails 4.0 and 4.1 to work with newer Ruby (>= 2.4) by avoiding a "stack level too deep" error
+# when ActiveSupport tries to smarten up Numeric by messing with Fixnum and Bignum at the end of:
+# activesupport-4.0.13/lib/active_support/core_ext/numeric/conversions.rb
+if ActiveRecord.version < ::Gem::Version.new('4.2') &&
+   ActiveRecord.version > ::Gem::Version.new('3.2') &&
+   Object.const_defined?('Integer') && Integer.superclass.name == 'Numeric'
+  class OurFixnum < Integer; end
+  Numeric.const_set('Fixnum', OurFixnum)
+  class OurBignum < Integer; end
+  Numeric.const_set('Bignum', OurBignum)
+end
+
 require 'active_record'
 
 require 'duty_free/config'
@@ -63,6 +96,39 @@ module DutyFree
 end
 
 ActiveSupport.on_load(:active_record) do
+  # 
+  #   klasses = [Float, BigDecimal]
+  # # Ruby 2.4+ unifies Fixnum & Bignum into Integer.
+  # if 0.class == Integer
+  #   klasses << Integer
+  # else
+  #   klasses << Fixnum << Bignum
+  # end
+
+  # klasses.each do |klass|
+
+  # Rails < 4.2 is not innately compatible with Ruby 2.4 and later, and comes up with:
+  # "TypeError: Cannot visit Integer" unless we patch like this:
+  unless ::Gem::Version.new(RUBY_VERSION) < ::Gem::Version.new('2.4')
+    unless Arel::Visitors::DepthFirst.private_instance_methods.include?(:visit_Integer)
+      module Arel
+        module Visitors
+          class DepthFirst < Arel::Visitors::Visitor
+            alias :visit_Integer :terminal
+          end
+
+          class Dot < Arel::Visitors::Visitor
+            alias :visit_Integer :visit_String
+          end
+
+          class ToSql < Arel::Visitors::Visitor
+            alias :visit_Integer :literal
+          end
+        end
+      end
+    end
+  end
+
   include ::DutyFree::Extensions
 end
 

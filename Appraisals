@@ -9,6 +9,38 @@
 # > the version from the appraisal takes precedence.
 # > https://github.com/thoughtbot/appraisal
 
+appraise 'ar-3.0' do
+  gem 'activerecord', '~> 3.0.20'
+
+  gem 'database_cleaner', '~> 1.6'
+  gem 'ffaker', '~> 2.11'
+  gem 'generator_spec', '~> 0.9.4'
+  gem 'memory_profiler', '~> 0.9.14'
+  gem 'mysql2', '< 0.5.2'
+  gem 'pg', '>= 0.18', '< 2.0'
+  gem 'pry-byebug', '~> 3.7.0'
+  gem 'rake', '~> 13.0'
+  gem 'rspec-rails', '~> 3.9'
+  gem 'sqlite3', '< 1.4'
+  gem 'test-unit'
+end
+
+appraise 'ar-3.2' do
+  gem 'activerecord', '~> 3.2.22'
+
+  gem 'database_cleaner', '~> 1.6'
+  gem 'ffaker', '~> 2.11'
+  gem 'generator_spec', '~> 0.9.4'
+  gem 'memory_profiler', '~> 0.9.14'
+  gem 'mysql2', '< 0.5.2'
+  gem 'pg', '>= 0.18', '< 2.0'
+  gem 'pry-byebug', '~> 3.7.0'
+  gem 'rake', '~> 13.0'
+  gem 'rspec-rails', '~> 3.9'
+  gem 'sqlite3', '< 1.4'
+  gem 'test-unit'
+end
+
 appraise 'ar-4.0' do
   gem 'activerecord', '~> 4.0.13'
 

@@ -2605,9 +2605,9 @@ RSpec.describe Employee, type: :model do
     # Can do .group(1).order(1) when we support AR >= 4.2
     totals_per_year = OrderDetail.joins(:order).group(Arel.sql(extract_year)).order(Arel.sql(extract_year))
                                  .pluck(
-                                    Arel.sql("#{extract_year} AS year"),
-                                    Arel.sql('SUM(order_details.quantity * order_details.unit_price * 100) AS total')
-                                  )
+                                   Arel.sql("#{extract_year} AS year"),
+                                   Arel.sql('SUM(order_details.quantity * order_details.unit_price * 100) AS total')
+                                 )
     expect(totals_per_year.map { |x| x.map(&:to_i) }).to eq([
       # for the subset of data   for the entire set of data, all orders
       [1996, 22_629_850], #      [1996, 22_629_850], # $226,298.50

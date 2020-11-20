@@ -3,15 +3,20 @@
 class ApplicationController < ActionController::Base
   protect_from_forgery
 
-  # Some applications and libraries modify `current_user`. Their changes need
-  # to be reflected in `whodunnit`, so the `set_duty_free_whodunnit` below
-  # must happen after this.
-  before_action :modify_current_user
+  if respond_to?(:before_action)
+    # Some applications and libraries modify `current_user`. Their changes need
+    # to be reflected in `whodunnit`, so the `set_duty_free_whodunnit` below
+    # must happen after this.
+    before_action :modify_current_user
 
-  # DF used to add this callback automatically. Now people are required to add
-  # it themselves, like this, allowing them to control the order of callbacks.
-  # The `modify_current_user` callback above shows why this control is useful.
-  before_action :set_duty_free_whodunnit
+    # DF used to add this callback automatically. Now people are required to add
+    # it themselves, like this, allowing them to control the order of callbacks.
+    # The `modify_current_user` callback above shows why this control is useful.
+    before_action :set_duty_free_whodunnit
+  else # Rails < 4.0 uses #before_filter instead of #before_action
+    before_filter :modify_current_user
+    before_filter :set_duty_free_whodunnit
+  end
 
   def rescue_action(e)
     raise e

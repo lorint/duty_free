@@ -24,7 +24,7 @@ Layout/LineLength:
 Metrics/AbcSize:
   Exclude:
     - spec/test_app/db/migrate/*
-  Max: 371
+  Max: 373
 
 Metrics/BlockLength:
   Max: 198
@@ -40,7 +40,7 @@ Metrics/ClassLength:
     - spec/test_app/db/migrate/*
 
 Metrics/CyclomaticComplexity:
-  Max: 121
+  Max: 122
 
 Metrics/MethodLength:
   Max: 250
@@ -55,7 +55,7 @@ Metrics/ParameterLists:
   Max: 10
 
 Metrics/PerceivedComplexity:
-  Max: 134
+  Max: 135
 
 Style/FrozenStringLiteralComment:
   Exclude:

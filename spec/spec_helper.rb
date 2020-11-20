@@ -49,7 +49,17 @@ def params_wrapper(args)
 end
 
 require File.expand_path('test_app/config/environment', __dir__)
+# Avoid the RSpec error message:  "Ruby 2.2+ is not supported on Rails 3.0.20"
+if ActiveRecord.version < ::Gem::Version.new('3.2') && RUBY_VERSION >= '2.2.0'
+  original_ruby_version = Object.send(:remove_const, :RUBY_VERSION)
+  Object.const_set('RUBY_VERSION', '2.1.9')
+end
 require 'rspec/rails'
+if original_ruby_version
+  Object.send(:remove_const, :RUBY_VERSION)
+  Object.const_set('RUBY_VERSION', original_ruby_version)
+end
+
 require 'duty_free/frameworks/rspec'
 require 'ffaker'
 

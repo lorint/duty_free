@@ -32,6 +32,15 @@ RSpec.configure do |config|
   Kernel.srand config.seed
 end
 
+# ActiveRecord before 4.0 didn't have #version
+unless ActiveRecord.respond_to?(:version)
+  module ActiveRecord
+    def self.version
+      ::Gem::Version.new(ActiveRecord::VERSION::STRING)
+    end
+  end
+end
+
 # Allow older Rails to work with newer Ruby (>= 2.4) by avoiding a "stack level too deep" error
 # when ActiveSupport tries to smarten up Numeric by messing with Fixnum and Bignum at the end of:
 # activesupport-4.0.13/lib/active_support/core_ext/numeric/conversions.rb
@@ -51,7 +60,17 @@ def params_wrapper(args)
 end
 
 require File.expand_path('test_app/config/environment', __dir__)
+# Avoid the RSpec error message:  "Ruby 2.2+ is not supported on Rails 3.0.20"
+if ActiveRecord.version < ::Gem::Version.new('3.2') && RUBY_VERSION >= '2.2.0'
+  original_ruby_version = Object.send(:remove_const, :RUBY_VERSION)
+  Object.const_set('RUBY_VERSION', '2.1.9')
+end
 require 'rspec/rails'
+if original_ruby_version
+  Object.send(:remove_const, :RUBY_VERSION)
+  Object.const_set('RUBY_VERSION', original_ruby_version)
+end
+
 require 'duty_free/frameworks/rspec'
 require 'ffaker'
 

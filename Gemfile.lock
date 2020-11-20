@@ -2,7 +2,7 @@ PATH
   remote: .
   specs:
     duty_free (1.0.5)
-      activerecord (>= 4.2, < 6.0)
+      activerecord (>= 3.0, < 6.1)
 
 GEM
   remote: https://rubygems.org/

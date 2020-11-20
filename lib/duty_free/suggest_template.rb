@@ -48,12 +48,10 @@ module DutyFree
             'belongs_to'
           elsif (is_habtm = assoc.respond_to?(:macro) ? (assoc.macro == :has_and_belongs_to_many) : assoc.is_a?(ActiveRecord::Reflection::HasAndBelongsToManyReflection))
             'has_and_belongs_to_many'
+          elsif assoc.respond_to?(:macro) ? (assoc.macro == :has_many) : assoc.is_a?(ActiveRecord::Reflection::HasManyReflection)
+            'has_many'
           else
-            if assoc.respond_to?(:macro) ? (assoc.macro == :has_many) : assoc.is_a?(ActiveRecord::Reflection::HasManyReflection)
-              'has_many'
-            else
-              'has_one'
-            end
+            'has_one'
           end
         # Always process belongs_to, and also process has_one and has_many if do_has_many is chosen.
         # Skip any HMT or HABTM. (Maybe break out HABTM into a combo HM and BT in the future.)

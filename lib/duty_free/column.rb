@@ -36,19 +36,15 @@ module DutyFree
     end
 
     def titleize
-      @titleized ||= sym_string.titleize
+      @titleized ||= to_sym.titleize
     end
-
-    delegate :to_sym, to: :sym_string
 
     def path
       @path ||= ::DutyFree::Util._prefix_join([pre_prefix, prefix]).split('.').map(&:to_sym)
     end
 
-  private
-
     # The snake-cased column name to be used for building the full list of template_columns
-    def sym_string
+    def to_sym
       @sym_string ||= ::DutyFree::Util._prefix_join(
         [pre_prefix, prefix, ::DutyFree::Util._clean_name(name, import_template_as)],
         '_'

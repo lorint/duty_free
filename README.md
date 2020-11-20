@@ -14,7 +14,7 @@ seamlessly importing and exporting that data.
 | Version        | Documentation                                             |
 | -------------- | --------------------------------------------------------- |
 | Unreleased     | https://github.com/lorint/duty_free/blob/master/README.md |
-| 1.0.3          | https://github.com/lorint/duty_free/blob/v1.0.3/README.md |
+| 1.0.5          | https://github.com/lorint/duty_free/blob/v1.0.5/README.md |
 
 ## Table of Contents
 
@@ -49,8 +49,17 @@ seamlessly importing and exporting that data.
 
 | duty_free      | branch     | tags   | ruby     | activerecord  |
 | -------------- | ---------- | ------ | -------- | ------------- |
-| unreleased     | master     |        | >= 2.4.0 | >= 4.2, < 6   |
-| 1.0            | 1-stable   | v1.x   | >= 2.4.0 | >= 4.2, < 6   |
+| unreleased     | master     |        | >= 2.3.5 | >= 3.0, < 6.1 |
+| 1.0            | 1-stable   | v1.x   | >= 2.3.5 | >= 3.0, < 6.1 |
+
+Note that if you are running Rails older than v4.2 on Ruby v2.4 or newer then normally this
+fails because Fixnum and Bignum were merged to become Integer with newer versions of Ruby.
+This gem provides a patch for this scenario so everything will work.
+
+As well if you are running Rails older than v4.0 then a patch to ActiveRecord will be applied
+to add #find_by and an updated version of #pluck so it can be compatible with this gem.  This
+should generally not negatively impact older applications, and allows them as well to use
+these newer methods.
 
 ### 1.b. Installation
 

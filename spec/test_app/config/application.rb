@@ -8,8 +8,18 @@ require 'duty_free'
 require 'active_record/railtie'
 # require 'action_controller/railtie'
 
-Bundler.require(:default, Rails.env)
 require 'duty_free'
+
+# Allow Rails < 3.2 to run with newer versions of Psych gem
+if ActiveRecord.version < ::Gem::Version.new('3.2') && !BigDecimal.respond_to?(:yaml_as)
+  class BigDecimal
+    class <<self
+      alias yaml_as yaml_tag
+    end
+  end
+end
+
+Bundler.require(:default, Rails.env)
 
 module TestApp
   class Application < Rails::Application

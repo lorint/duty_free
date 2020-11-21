@@ -16,11 +16,11 @@ RSpec.describe DutyFree do
 
       person.thing = thing
       person.thing_2 = thing2
-      person.update(name: 'Steve')
+      person.update2(name: 'Steve')
 
-      thing.update(name: 'BMW 330')
-      thing.update(name: 'BMX 2.0')
-      person.update(name: 'Peter')
+      thing.update2(name: 'BMW 330')
+      thing.update2(name: 'BMX 2.0')
+      person.update2(name: 'Peter')
     end
   end
 end

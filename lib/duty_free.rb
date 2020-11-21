@@ -33,6 +33,15 @@ if ActiveRecord.version < ::Gem::Version.new('4.2') &&
   Numeric.const_set('Bignum', OurBignum)
 end
 
+# Allow Rails < 3.2 to run with newer versions of Psych gem
+if BigDecimal.respond_to?(:yaml_tag) && !BigDecimal.respond_to?(:yaml_as)
+  class BigDecimal
+    class <<self
+      alias yaml_as yaml_tag
+    end
+  end
+end
+
 require 'active_record'
 
 require 'duty_free/config'
@@ -98,15 +107,6 @@ end
 # Major compatibility fixes for ActiveRecord < 4.2
 # ================================================
 ActiveSupport.on_load(:active_record) do
-  # ActiveRecord before 4.0 didn't have #version
-  unless ActiveRecord.respond_to?(:version)
-    module ActiveRecord
-      def self.version
-        ::Gem::Version.new(ActiveRecord::VERSION::STRING)
-      end
-    end
-  end
-
   # Rails < 4.0 cannot do #find_by, or do #pluck on multiple columns, so here are the patches:
   if ActiveRecord.version < ::Gem::Version.new('4.0')
     module ActiveRecord
@@ -130,7 +130,18 @@ ActiveSupport.on_load(:active_record) do
           else
             relation = clone # spawn
             relation.select_values = column_names
-            result = if respond_to?(:bind_values)
+            result = if klass.connection.class.name.end_with?('::PostgreSQLAdapter')
+                       rslt = klass.connection.execute(relation.arel.to_sql)
+                       rslt.type_map =
+                         @type_map ||= proc do
+                           # This aliasing avoids the warning:
+                           # "no type cast defined for type "numeric" with oid 1700. Please cast this type
+                           # explicitly to TEXT to be safe for future changes."
+                           PG::BasicTypeRegistry.alias_type(0, 'numeric', 'text')
+                           PG::BasicTypeMapForResults.new(klass.connection.raw_connection)
+                         end.call
+                       rslt.to_a
+                     elsif respond_to?(:bind_values)
                        klass.connection.select_all(relation.arel, nil, bind_values)
                      else
                        klass.connection.select_all(relation.arel.to_sql, nil)
@@ -224,6 +235,13 @@ ActiveSupport.on_load(:active_record) do
         end
       end
     end
+  end
+
+  if ActiveRecord.version < ::Gem::Version.new('5.0')
+    # Avoid pg gem deprecation warning:  "You should use PG::Connection, PG::Result, and PG::Error instead"
+    PGconn = PG::Connection
+    PGresult = PG::Result
+    PGError = PG::Error
   end
 
   include ::DutyFree::Extensions

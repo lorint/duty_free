@@ -10,11 +10,15 @@ require 'active_record/railtie'
 
 require 'duty_free'
 
-# Allow Rails < 3.2 to run with newer versions of Psych gem
-if ActiveRecord.version < ::Gem::Version.new('3.2') && !BigDecimal.respond_to?(:yaml_as)
-  class BigDecimal
-    class <<self
-      alias yaml_as yaml_tag
+# Set up one common way to call #update for testing
+module ActiveRecord
+  module Persistence
+    if ActiveRecord::Persistence.instance_methods.include?(:update)
+      # For ActiveRecord >= 4.0, wire up update2 to point to #update
+      alias update2 update
+    else
+      # For ActiveRecord < 4.0, wire up update2 to point to #update_attributes
+      alias update2 update_attributes
     end
   end
 end

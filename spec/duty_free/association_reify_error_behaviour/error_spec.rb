@@ -17,11 +17,11 @@ RSpec.describe DutyFree do
 
       person.car = car
       person.bicycle = bicycle
-      person.update(name: 'Steve')
+      person.update2(name: 'Steve')
 
-      car.update(name: 'BMW 330')
-      bicycle.update(name: 'BMX 2.0')
-      person.update(name: 'Peter')
+      car.update2(name: 'BMW 330')
+      bicycle.update2(name: 'BMX 2.0')
+      person.update2(name: 'Peter')
     end
   end
 end

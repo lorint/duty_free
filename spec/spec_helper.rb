@@ -82,3 +82,13 @@ end
 # Migrate
 require_relative 'support/duty_free_spec_migrator'
 ::DutyFreeSpecMigrator.new(::File.expand_path('test_app/db/migrate/', __dir__)).migrate
+
+def unload_class(name)
+  # if Object.const_defined?(name)
+  #   klass = Object.const_get(name)
+  #   if klass.is_a?(ActiveRecord::Base)
+  #     klass.reflect_on_all_associations { |a| a.reset }
+  #   end
+  Object.send(:remove_const, name) if Object.const_defined?(name)
+  # end
+end

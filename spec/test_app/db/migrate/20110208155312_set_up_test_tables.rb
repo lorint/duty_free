@@ -315,6 +315,16 @@ class SetUpTestTables < (
       t.references :product, index: true
     end
 
+    create_table :restaurant_categories do |t|
+      t.string :name
+      t.references :parent, index: true
+    end
+    create_table :restaurants do |t|
+      t.string :name
+      t.string :address
+      t.references :category, index: true
+    end
+
     # custom_primary_key_records use a uuid column (string)
     create_table :custom_primary_key_records, id: false, force: true do |t|
       t.column :uuid, :string, primary_key: true

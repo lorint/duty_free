@@ -45,7 +45,7 @@ module DutyFree
           # The right side here at the top is the very last table, and anywhere else down the tree it is
           # the later "JOIN" table of this pair.  (The table that comes after all the rest of the JOINs
           # from the left side.)
-          names << piece.right.name
+          names << (piece.right.table_alias || piece.right.name)
         else # "Normal" setup, fed from a JoinSource which has an array of JOINs
           # The left side is the "JOIN" table
           names += _recurse_arel(piece.left)
@@ -53,14 +53,14 @@ module DutyFree
         end
         # rubocop:enable Style/IdenticalConditionalBranches
       elsif piece.is_a?(Arel::Table) # Table
-        names << piece.name
+        names << (piece.table_alias || piece.name)
       elsif piece.is_a?(Arel::Nodes::TableAlias) # Alias
         # Can get the real table name from:  self._recurse_arel(piece.left)
         names << piece.right.to_s # This is simply a string; the alias name itself
       elsif piece.is_a?(Arel::Nodes::JoinSource) # Leaving this until the end because AR < 3.2 doesn't know at all about JoinSource!
         # The left side is the "FROM" table
         # names += _recurse_arel(piece.left)
-        names << piece.left.name
+        names << (piece.left.table_alias || piece.left.name)
         # The right side is an array of all JOINs
         names += piece.right.inject([]) { |s, v| s + _recurse_arel(v) }
       end

@@ -49,7 +49,7 @@ Metrics/MethodLength:
     - spec/models/northwind_spec.rb
 
 Metrics/ModuleLength:
-  Max: 437
+  Max: 465
 
 Metrics/ParameterLists:
   Max: 10

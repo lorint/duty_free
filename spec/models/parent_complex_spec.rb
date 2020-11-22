@@ -3,33 +3,41 @@
 require 'spec_helper'
 require 'csv'
 
-# Set up Models
-# =============
-
 # Two without IMPORT_TEMPLATEs
-
-class Parent < ActiveRecord::Base
-  if ActiveRecord.version >= ::Gem::Version.new('4.2')
-    has_many :children, dependent: :destroy
-  else
-    # Rails before 4.2 didn't automatically create inverse_of entries on associations,
-    # so we'll need to do that dirty work ourselves
-    has_many :children, inverse_of: :parent, dependent: :destroy
-  end
-
-  def self.import(file)
-    df_import(file)
-  end
-end
-
-class Child < ActiveRecord::Base
-  belongs_to :parent
-end
-
 # Examples
 # ========
 
-RSpec.describe Parent, type: :model do
+RSpec.describe 'Parent', type: :model do
+  # Set up Models
+  # =============
+  before(:all) do
+    unload_class('Parent')
+    class Parent < ActiveRecord::Base
+      if ActiveRecord.version >= ::Gem::Version.new('4.2')
+        has_many :children, dependent: :destroy
+      else
+        # Rails before 4.2 didn't automatically create inverse_of entries on associations,
+        # so we'll need to do that dirty work ourselves
+        has_many :children, inverse_of: :parent, dependent: :destroy
+      end
+
+      def self.import(file)
+        df_import(file)
+      end
+    end
+
+    unload_class('Child')
+    class Child < ActiveRecord::Base
+      if ActiveRecord.version >= ::Gem::Version.new('4.2')
+        belongs_to :parent
+      else
+        # Rails before 4.2 didn't automatically create inverse_of entries on associations,
+        # so we'll need to do that dirty work ourselves
+        belongs_to :parent, inverse_of: :children
+      end
+    end
+  end
+
   before(:each) do
     Parent.destroy_all
   end
@@ -176,13 +184,13 @@ RSpec.describe Parent, type: :model do
       # Firstname,Lastname,Address,Children Firstname,Children Lastname,Children Dateofbirth
       child_info_csv = CSV.new(
         <<~CSV
-        parent_1_firstname,parent_1_lastname,address,address_line_2,city,province,postal_code,telephone_number,email,admin_notes,gross_income, created_by_admin ,status,firstname,lastname,dateofbirth,gender
-        Nav,Deo,College Road,,Alliston,BC,N4c 6u9,500 000 0000,nav@prw.com,"HAPPY",13917, TRUE , Approved ,Sami,Kidane,2009-10-10,Male
+          parent_1_firstname,parent_1_lastname,address,address_line_2,city,province,postal_code,telephone_number,email,admin_notes,gross_income, created_by_admin ,status,firstname,lastname,dateofbirth,gender
+          Nav,Deo,College Road,,Alliston,BC,N4c 6u9,500 000 0000,nav@prw.com,"HAPPY",13917, TRUE , Approved ,Sami,Kidane,2009-10-10,Male
         CSV
       )
 
       # Perform the import on CSV data, overriding the default generated template
-      expect {
+      expect do
         Parent.df_import(
           child_info_csv,
           {
@@ -214,7 +222,7 @@ RSpec.describe Parent, type: :model do
                 }
           }.freeze
         )
-      }.not_to raise_error
+      end.not_to raise_error
 
       parents = Parent.order(:id)
                       .pluck(:firstname, :lastname, :address, :address_line_2, :city, :province, :postal_code,

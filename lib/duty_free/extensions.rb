@@ -59,6 +59,9 @@ module DutyFree
 
           # So we can properly create the SELECT list, create a mapping between our
           # column alias prefixes and the aliases AREL creates.
+          # %%% If with Rails 3.1 and older you get "NoMethodError: undefined method `eq' for nil:NilClass"
+          # when trying to call relation.arel, then somewhere along the line while navigating a has_many
+          # relationship it can't find the proper foreign key.
           core = relation.arel.ast.cores.first
           # Accommodate AR < 3.2
           arel_alias_names = if core.froms.is_a?(Arel::Table)
@@ -284,7 +287,19 @@ module DutyFree
                         sub_next = klass.new(criteria || {})
                         to_be_saved << [sub_next, sub_obj, bt_name, sub_next]
                       end
+                      # This wires it up in memory, but doesn't yet put the proper foreign key ID in
+                      # place when the primary object is a new one (and thus not having yet been saved
+                      # doesn't yet have an ID).
+                      # binding.pry if !sub_next.new_record? && sub_next.name == 'Squidget Widget' # !sub_obj.changed?
+                      # # %%% Question is -- does the above set changed? when a foreign key is not yet set
+                      # # and only the in-memory object has changed?
+                      is_yet_changed = sub_obj.changed?
                       sub_obj.send(bt_name, sub_next)
+
+                      # We need this in the case of updating the primary object across a belongs_to when
+                      # the foreign one already exists and is not otherwise changing, such as when it is
+                      # not a new one, so wouldn't otherwise be getting saved.
+                      to_be_saved << [sub_obj] if !sub_obj.new_record? && !is_yet_changed && sub_obj.changed?
                     # From a has_many or has_one?
                     # Rails 4.0 and later can do:  sub_next.is_a?(ActiveRecord::Associations::CollectionProxy)
                     elsif [:has_many, :has_one].include?(assoc.macro) && !assoc.options[:through]
@@ -302,9 +317,11 @@ module DutyFree
                       if sub_hm
                         sub_next = sub_hm
                       elsif assoc.macro == :has_one
-                        bt_name = "#{assoc.inverse.name}="
+                        # assoc.active_record.name.underscore is only there to support older Rails
+                        # that doesn't do automatic inverse_of
+                        ho_name = "#{assoc.inverse_of&.name || assoc.active_record.name.underscore}="
                         sub_next = assoc.klass.new(criteria)
-                        to_be_saved << [sub_next, sub_obj, bt_name, sub_next]
+                        to_be_saved << [sub_next, sub_next, ho_name, sub_obj]
                       else
                         # Two other methods that are possible to check for here are :conditions and
                         # :sanitized_conditions, which do not exist in Rails 4.0 and later.
@@ -360,20 +377,18 @@ module DutyFree
                     row_errors[v.name] << "Boolean value \"#{row[key]}\" in column #{key + 1} not recognized"
                   end
                 end
+
+                is_yet_changed = sub_obj.changed?
                 sub_obj.send(sym, row[key])
+                # If this one is transitioning from having not changed to now having been changed,
+                # and is not a new one anyway that would already be lined up to get saved, then we
+                # mark it to now be saved.
+                to_be_saved << [sub_obj] if !sub_obj.new_record? && !is_yet_changed && sub_obj.changed?
                 # else
                 #   puts "  #{sub_obj.class.name} doesn't respond to #{sym}"
               end
+              # Try to save final sub-object(s) if any exist
               ::DutyFree::Extensions._save_pending(to_be_saved)
-              # Try to save a final sub-object if one exists
-              # sub_obj.save if sub_obj && this_path && !is_has_one && sub_obj.valid?
-
-              # # Wire up has_one associations
-              # has_ones.each do |hasone|
-              #   parent = sub_objects[hasone[0..-2].map(&:to_s).join(',')] || obj
-              #   hasone_object = sub_objects[hasone.map(&:to_s).join(',')]
-              #   parent.send("#{hasone[-1]}=", hasone_object) if parent.new_record? || hasone_object.valid?
-              # end
 
               # Reinstate any missing polymorphic _type and _id values
               polymorphics.each do |poly|
@@ -454,9 +469,13 @@ module DutyFree
         # Don't let this fool you -- we really are in search of the foreign key name here,
         # and Rails 3.0 and older used some fairly interesting conventions, calling it instead
         # the "primary_key_name"!
-        if assoc.respond_to?(:primary_key_name) && (fk_name = assoc.primary_key_name) &&
-           col_names.include?(fk_name.to_s)
-          return fk_name
+        if assoc.respond_to?(:primary_key_name)
+          if (fk_name = assoc.primary_key_name) && col_names.include?(fk_name.to_s)
+            return fk_name
+          end
+          if (fk_name = assoc.inverse_of.primary_key_name) && col_names.include?(fk_name.to_s)
+            return fk_name
+          end
         end
 
         puts "* Wow, had no luck at all finding a foreign key for #{assoc.inspect}"
@@ -721,6 +740,11 @@ module DutyFree
     # can be added properly to those new objects.  Finally at the end also called to save everything.
     def self._save_pending(to_be_saved)
       while (tbs = to_be_saved.pop)
+        # puts "Will be calling #{tbs[1].class.name} #{tbs[1]&.id} .#{tbs[2]} #{tbs[3].class.name} #{tbs[3]&.id}"
+
+        # Wire this one up if it had came from a has_one association
+        tbs[1].send(tbs[2], tbs[3]) if tbs[0] == tbs[1]
+
         ais = (tbs.first.class.respond_to?(:around_import_save) && tbs.first.class.method(:around_import_save)) ||
               (respond_to?(:around_import_save) && method(:around_import_save))
         if ais
@@ -735,11 +759,12 @@ module DutyFree
         else
           puts "* Unable to save #{tbs.first.inspect}"
         end
-        # puts "Save #{tbs.first.class.name} #{tbs.first&.id} #{!tbs.first.new_record?}"
-        unless tbs[1].nil? || tbs.first.new_record?
-          # puts "Calling #{tbs[1].class.name} #{tbs[1]&.id} .#{tbs[2]} #{tbs[3].class.name} #{tbs[3]&.id}"
-          tbs[1].send(tbs[2], tbs[3])
-        end
+
+        next if tbs[1].nil? || # From a has_many?
+                tbs[0] == tbs[1] || # From a has_one?
+                tbs.first.new_record?
+
+        tbs[1].send(tbs[2], tbs[3])
       end
     end
 

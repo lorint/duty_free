@@ -238,11 +238,11 @@ module DutyFree
           if klass.columns.map(&:name).include?(attrib)
             s << attrib
           else
-            bt_names = klass.reflect_on_all_associations.each_with_object([]) do |assoc, names|
-              names << assoc.name.to_s if assoc.is_a?(ActiveRecord::Reflection::BelongsToReflection)
+            ho_and_bt_names = klass.reflect_on_all_associations.each_with_object([]) do |assoc, names|
+              names << assoc.name.to_s if assoc.belongs_to? || assoc.macro == :has_one
               names
             end
-            unless bt_names.include?(attrib)
+            unless ho_and_bt_names.include?(attrib)
               puts "* In the #{klass.name} model  \"validates_presence_of :#{attrib}\"  should be removed as it does not refer to any existing column."
               errored_columns << klass_col
             end

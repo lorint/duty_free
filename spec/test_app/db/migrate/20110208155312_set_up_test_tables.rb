@@ -49,7 +49,7 @@ class SetUpTestTables < (
       t.text      :a_text
       t.integer   :an_integer
       t.float     :a_float
-      t.decimal   :a_decimal, precision: 6, scale: 4
+      t.decimal   :a_decimal, precision: 7, scale: 4
       t.datetime  :a_datetime, limit: 6
       t.time      :a_time
       t.date      :a_date

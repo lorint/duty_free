@@ -13,6 +13,7 @@ Layout/AccessModifierIndentation:
 Layout/ArrayAlignment:
   Exclude:
     - spec/**/*_spec.rb
+    - spec/test_app/app/models/**/*.rb
 
 Layout/FirstHashElementIndentation:
   Exclude:
@@ -24,7 +25,7 @@ Layout/LineLength:
 Metrics/AbcSize:
   Exclude:
     - spec/test_app/db/migrate/*
-  Max: 373
+  Max: 375
 
 Metrics/BlockLength:
   Max: 198
@@ -49,7 +50,7 @@ Metrics/MethodLength:
     - spec/models/northwind_spec.rb
 
 Metrics/ModuleLength:
-  Max: 465
+  Max: 467
 
 Metrics/ParameterLists:
   Max: 10

@@ -137,7 +137,8 @@ ActiveSupport.on_load(:active_record) do
                            # This aliasing avoids the warning:
                            # "no type cast defined for type "numeric" with oid 1700. Please cast this type
                            # explicitly to TEXT to be safe for future changes."
-                           PG::BasicTypeRegistry.alias_type(0, 'numeric', 'text')
+                           PG::BasicTypeRegistry.alias_type(0, 'numeric', 'text') # oid 1700
+                           PG::BasicTypeRegistry.alias_type(0, 'time', 'text') # oid 1083
                            PG::BasicTypeMapForResults.new(klass.connection.raw_connection)
                          end.call
                        rslt.to_a
@@ -242,6 +243,14 @@ ActiveSupport.on_load(:active_record) do
     PGconn = PG::Connection
     PGresult = PG::Result
     PGError = PG::Error
+  end
+
+  unless DateTime.instance_methods.include?(:nsec)
+    class DateTime < Date
+      def nsec
+        (sec_fraction * 1000000000).to_i
+      end
+    end
   end
 
   include ::DutyFree::Extensions

@@ -64,7 +64,7 @@ RSpec.describe 'Restaurant', type: :model do
 
     unload_class('Restaurant')
     class Restaurant < ActiveRecord::Base
-      belongs_to :category, class_name: 'RestaurantCategory', inverse_of: :restaurants
+      belongs_to :category, class_name: 'RestaurantCategory', foreign_key: :category_id, inverse_of: :restaurants
     end
   end
 

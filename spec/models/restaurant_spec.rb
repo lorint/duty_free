@@ -30,6 +30,7 @@ RSpec.describe 'Restaurant', type: :model do
   before(:all) do
     # Set up Models
     # =============
+    unload_class('RestaurantCategory')
     class RestaurantCategory < ActiveRecord::Base
       if ActiveRecord.version >= Gem::Version.new('5.0')
         belongs_to :parent, class_name: name, optional: true
@@ -37,9 +38,10 @@ RSpec.describe 'Restaurant', type: :model do
         belongs_to :parent, class_name: name
       end
       has_many :subcategories, class_name: name, foreign_key: :parent_id, dependent: :destroy
-      has_many :restaurants, inverse_of: :category
+      has_many :restaurants, foreign_key: :category_id, inverse_of: :category
     end
 
+    unload_class('Restaurant')
     class Restaurant < ActiveRecord::Base
       belongs_to :category, class_name: 'RestaurantCategory', foreign_key: :category_id, inverse_of: :restaurants
 

@@ -8,6 +8,14 @@ class Widget < ActiveRecord::Base
   else
     has_many :fluxors, dependent: :destroy
   end
+
+  # HABTM
+  has_and_belongs_to_many :foo_habtms
+
+  # HMT
+  has_many :foo_hmt_widgets
+  has_many :foo_hmts, through: :foo_hmt_widgets
+
   has_many :whatchamajiggers, as: :owner
   validates :name, exclusion: { in: [EXCLUDED_NAME] }
 end

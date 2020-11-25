@@ -40,15 +40,14 @@ module DutyFree
       assocs = {}
       this_klass.reflect_on_all_associations.each do |assoc|
         # PolymorphicReflection AggregateReflection RuntimeReflection
-        is_belongs_to = assoc.belongs_to? # is_a?(ActiveRecord::Reflection::BelongsToReflection)
+        is_belongs_to = assoc.belongs_to?
         # Figure out if it's belongs_to, has_many, or has_one
-        # HasAndBelongsToManyReflection
         belongs_to_or_has_many =
           if is_belongs_to
             'belongs_to'
-          elsif (is_habtm = assoc.respond_to?(:macro) ? (assoc.macro == :has_and_belongs_to_many) : assoc.is_a?(ActiveRecord::Reflection::HasAndBelongsToManyReflection))
+          elsif (is_habtm = assoc.macro == :has_and_belongs_to_many)
             'has_and_belongs_to_many'
-          elsif assoc.respond_to?(:macro) ? (assoc.macro == :has_many) : assoc.is_a?(ActiveRecord::Reflection::HasManyReflection)
+          elsif assoc.macro == :has_many
             'has_many'
           else
             'has_one'
@@ -80,8 +79,7 @@ module DutyFree
 
             # Find applicable polymorphic has_many associations from each real model
             model.reflect_on_all_associations.each do |poly_assoc|
-              next unless poly_assoc.is_a?(ActiveRecord::Reflection::HasManyReflection) &&
-                          poly_assoc.inverse_of == assoc
+              next unless poly_assoc.macro == :has_many && poly_assoc.inverse_of == assoc
 
               this_belongs_tos += (fkeys = [poly_assoc.type, poly_assoc.foreign_key])
               assocs["#{assoc.name}_#{poly_assoc.active_record.name.underscore}".to_sym] = [[fkeys, assoc.active_record], poly_assoc.active_record]
@@ -238,11 +236,11 @@ module DutyFree
           if klass.columns.map(&:name).include?(attrib)
             s << attrib
           else
-            ho_and_bt_names = klass.reflect_on_all_associations.each_with_object([]) do |assoc, names|
-              names << assoc.name.to_s if assoc.belongs_to? || assoc.macro == :has_one
+            hm_and_bt_names = klass.reflect_on_all_associations.each_with_object([]) do |assoc, names|
+              names << assoc.name.to_s if [:belongs_to, :has_many, :has_one].include?(assoc.macro)
               names
             end
-            unless ho_and_bt_names.include?(attrib)
+            unless hm_and_bt_names.include?(attrib)
               puts "* In the #{klass.name} model  \"validates_presence_of :#{attrib}\"  should be removed as it does not refer to any existing column."
               errored_columns << klass_col
             end

@@ -27,7 +27,7 @@ RSpec.describe 'Wotsit', type: :model do
     # ---------------
     expect { Wotsit.df_import(child_info_csv) }.not_to raise_error
 
-    expect([Wotsit.count, Widget.count, Fluxor.count]).to eq([3, 2, 4])
+    expect([Wotsit.count, Widget.count, Fluxor.count]).to eq([3, 2, 3])
 
     widgets = Widget.order(:id).pluck(:name, :a_text, :an_integer, :a_float, :a_decimal, :a_datetime, :a_time, :a_date, :a_boolean)
 
@@ -51,13 +51,12 @@ RSpec.describe 'Wotsit', type: :model do
 
     widg_flux = Widget.joins(:fluxors)
                       .order('widgets.id', 'fluxors.id')
-                      .pluck('widgets.name', 'fluxors.name AS name2')
+                      .pluck('widgets.name', Arel.sql('fluxors.name AS name2'))
     wots_widg = Wotsit.joins(:widget)
                       .order('wotsits.id', 'widgets.id')
-                      .pluck('wotsits.name', 'widgets.name AS name2')
+                      .pluck('wotsits.name', Arel.sql('widgets.name AS name2'))
 
     expect(widg_flux).to eq([['Squidget Widget', 'Flux Capacitor'],
-                             ['Budget Widget', 'Flex Resistor'],
                              ['Budget Widget', 'Flex Resistor'],
                              ['Budget Widget', 'Nix Resistor']])
     expect(wots_widg).to eq([['Mr. Wotsit', 'Squidget Widget'],

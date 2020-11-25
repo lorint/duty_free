@@ -44,6 +44,7 @@ class SetUpTestTables < (
       t.timestamps null: true, limit: 6
     end
 
+    # Widgets and friends
     create_table :widgets, force: true do |t|
       t.string    :name
       t.text      :a_text
@@ -57,6 +58,38 @@ class SetUpTestTables < (
       t.string    :type
       t.timestamps null: true, limit: 6
     end
+    create_table :wotsits, force: true do |t|
+      t.integer :widget_id
+      t.string  :name
+      t.timestamps null: true, limit: 6
+    end
+    create_table :fluxors, force: true do |t|
+      t.integer :widget_id
+      t.string  :name
+    end
+    create_table :whatchamajiggers, force: true do |t|
+      t.string  :jig_type
+      t.integer :jig_id
+      t.string  :name
+    end
+
+    # HABTM
+    create_table :foo_habtms, force: true do |t|
+      t.string :name
+    end
+    create_table :foo_habtms_widgets, force: true, id: false do |t|
+      t.references :foo_habtm
+      t.references :widget
+    end
+
+    # HMT
+    create_table :foo_hmts, force: true do |t|
+      t.string :name
+    end
+    create_table :foo_hmt_widgets, force: true, id: false do |t|
+      t.references :foo_hmt
+      t.references :widget
+    end
 
     if ENV['DB'] == 'postgres'
       create_table :postgres_users, force: true do |t|
@@ -69,23 +102,6 @@ class SetUpTestTables < (
 
     create_table :not_on_updates, force: true do |t|
       t.timestamps null: true, limit: 6
-    end
-
-    create_table :wotsits, force: true do |t|
-      t.integer :widget_id
-      t.string  :name
-      t.timestamps null: true, limit: 6
-    end
-
-    create_table :fluxors, force: true do |t|
-      t.integer :widget_id
-      t.string  :name
-    end
-
-    create_table :whatchamajiggers, force: true do |t|
-      t.string  :owner_type
-      t.integer :owner_id
-      t.string  :name
     end
 
     create_table :articles, force: true do |t|
@@ -231,18 +247,6 @@ class SetUpTestTables < (
     create_table :ingredient_recipes, force: true do |t|
       t.references :ingredient
       t.references :recipe
-    end
-
-    # HABTM
-    create_table :bar_habtms, force: true do |t|
-      t.string :name
-    end
-    create_table :foo_habtms, force: true do |t|
-      t.string :name
-    end
-    create_table :bar_habtms_foo_habtms, force: true, id: false do |t|
-      t.references :bar_habtm
-      t.references :foo_habtm
     end
 
     # Self-referencing table

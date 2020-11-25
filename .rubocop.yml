@@ -50,10 +50,10 @@ Metrics/MethodLength:
     - spec/models/northwind_spec.rb
 
 Metrics/ModuleLength:
-  Max: 467
+  Max: 484
 
 Metrics/ParameterLists:
-  Max: 10
+  Max: 11
 
 Metrics/PerceivedComplexity:
   Max: 135

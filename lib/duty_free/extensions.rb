@@ -173,6 +173,7 @@ module DutyFree
             arguments = [data, import_template][0..last_arg_idx]
             data = ret if (ret = my_before_import.call(*arguments)).is_a?(Enumerable)
           end
+          build_tables = nil
           data.each_with_index do |row, row_num|
             row_errors = {}
             if is_first # Anticipate that first row has column names
@@ -204,9 +205,11 @@ module DutyFree
               cols.map! { |col| ::DutyFree::Util._clean_name(col, import_template[:as]) }
               defined_uniques(uniques, cols, cols.join('|'), starred)
               # Make sure that at least half of them match what we know as being good column names
-              template_column_objects = ::DutyFree::Extensions._recurse_def(self, import_template[:all], import_template).first
+              template_column_objects, _joins, build_tables = ::DutyFree::Extensions._recurse_def(self, import_template[:all], import_template)
               cols.each_with_index do |col, idx|
                 # prefixes = col_detail.pre_prefix + (col_detail.prefix.blank? ? [] : [col_detail.prefix])
+                # %%% Would be great here if when one comes back nil, try to find the closest match
+                # and indicate to the user a "did you mean?" about it.
                 keepers[idx] = template_column_objects.find { |col_obj| col_obj.titleize == col }
                 # puts "Could not find a match for column #{idx + 1}, #{col}" if keepers[idx].nil?
               end
@@ -236,6 +239,7 @@ module DutyFree
                 obj = find(criteria)
               else
                 is_insert = true
+                # binding.pry unless build_tables.empty? #  include?()
                 to_be_saved << [obj = new]
               end
               sub_obj = nil
@@ -271,14 +275,16 @@ module DutyFree
                     end
                     # Get existing related object, or create a new one
                     # This first part works for belongs_to.  has_many and has_one get sorted below.
+                    # start = (v.pre_prefix.blank? ? 0 : v.pre_prefix.length)
+                    start = 0
+                    trim_prefix = v.titleize[start..-(v.name.length + 2)]
+                    trim_prefix << ' ' unless trim_prefix.blank?
                     if (sub_next = sub_obj.send(path_part)).nil? && assoc.belongs_to?
                       klass = Object.const_get(assoc&.class_name)
                       # Try to find a unique item if one is referenced
                       sub_next = nil
                       begin
-                        trim_prefix = v.titleize[0..-(v.name.length + 2)]
-                        trim_prefix << ' ' unless trim_prefix.blank?
-                        sub_next, criteria = klass.find_existing(uniques, cols, starred, import_template, keepers, nil, row, klass, all, trim_prefix)
+                        sub_next, criteria = klass.find_existing(uniques, cols, starred, import_template, keepers, nil, row, klass, all, trim_prefix, assoc)
                       rescue ::DutyFree::NoUniqueColumnError
                       end
                       # puts "#{v.path} #{criteria.inspect}"
@@ -302,16 +308,14 @@ module DutyFree
                       to_be_saved << [sub_obj] if !sub_obj.new_record? && !is_yet_changed && sub_obj.changed?
                     # From a has_many or has_one?
                     # Rails 4.0 and later can do:  sub_next.is_a?(ActiveRecord::Associations::CollectionProxy)
-                    elsif [:has_many, :has_one].include?(assoc.macro) && !assoc.options[:through]
+                    elsif [:has_many, :has_one, :has_and_belongs_to_many].include?(assoc.macro) # && !assoc.options[:through]
                       ::DutyFree::Extensions._save_pending(to_be_saved)
                       # Try to find a unique item if one is referenced
                       # %%% There is possibility that when bringing in related classes using a nil
                       # in IMPORT_TEMPLATE[:all] that this will break.  Need to test deeply nested things.
-                      start = (v.pre_prefix.blank? ? 0 : v.pre_prefix.length)
-                      trim_prefix = v.titleize[start..-(v.name.length + 2)]
-                      trim_prefix << ' ' unless trim_prefix.blank?
+
                       # assoc.inverse_of is the belongs_to side of the has_many train we came in here on.
-                      sub_hm, criteria = assoc.klass.find_existing(uniques, cols, starred, import_template, keepers, assoc.inverse_of, row, sub_next, all, trim_prefix)
+                      sub_hm, criteria = assoc.klass.find_existing(uniques, cols, starred, import_template, keepers, assoc.inverse_of, row, sub_next, all, trim_prefix, assoc)
                       # If still not found then create a new related object using this has_many collection
                       # (criteria.empty? ? nil : sub_next.new(criteria))
                       if sub_hm
@@ -322,6 +326,11 @@ module DutyFree
                         ho_name = "#{assoc.inverse_of&.name || assoc.active_record.name.underscore}="
                         sub_next = assoc.klass.new(criteria)
                         to_be_saved << [sub_next, sub_next, ho_name, sub_obj]
+                      elsif assoc.macro == :has_and_belongs_to_many ||
+                            (assoc.macro == :has_many && assoc.options[:through])
+                        # sub_next = sub_next.new(criteria)
+                        sub_next = assoc.klass.new(criteria)
+                        to_be_saved << [sub_next, :has_and_belongs_to_many, assoc.name, sub_obj]
                       else
                         # Two other methods that are possible to check for here are :conditions and
                         # :sanitized_conditions, which do not exist in Rails 4.0 and later.
@@ -334,14 +343,17 @@ module DutyFree
                                    end
                         to_be_saved << [sub_next]
                       end
+                    # else
+                    # belongs_to for a found object, or a HMT
                     end
-                    # Look for possible missing polymorphic detail
-                    # Maybe can test for this via assoc.through_reflection
-                    if assoc.is_a?(ActiveRecord::Reflection::ThroughReflection) &&
-                       (delegate = assoc.send(:delegate_reflection)&.active_record&.reflect_on_association(assoc.source_reflection_name)) &&
-                       delegate.options[:polymorphic]
-                      polymorphics << { parent: sub_next, child: sub_obj, type_col: delegate.foreign_type, id_col: delegate.foreign_key.to_s }
-                    end
+                    # # Incompatible with Rails < 4.2
+                    # # Look for possible missing polymorphic detail
+                    # # Maybe can test for this via assoc.through_reflection
+                    # if assoc.is_a?(ActiveRecord::Reflection::ThroughReflection) &&
+                    #    (delegate = assoc.send(:delegate_reflection)&.active_record&.reflect_on_association(assoc.source_reflection_name)) &&
+                    #    delegate.options[:polymorphic]
+                    #   polymorphics << { parent: sub_next, child: sub_obj, type_col: delegate.foreign_type, id_col: delegate.foreign_key.to_s }
+                    # end
                     unless sub_next.nil?
                       # if sub_next.class.name == devise_class && # only for Devise users
                       #     sub_next.email =~ Devise.email_regexp
@@ -447,25 +459,16 @@ module DutyFree
         # at the inverse's foreign key setting if available.  In all cases don't accept
         # anything that's not backed with a real column in the table.
         col_names = assoc.klass.column_names
-        if (fk_name = assoc.options[:foreign_key]) && col_names.include?(fk_name.to_s)
+        if (
+             (fk_name = assoc.options[:foreign_key]) ||
+             (fk_name = assoc.inverse_of&.options&.fetch(:foreign_key) { nil }) ||
+             (assoc.respond_to?(:foreign_key) && (fk_name = assoc.foreign_key)) ||
+             (fk_name = assoc.inverse_of&.foreign_key) ||
+             (fk_name = assoc.inverse_of&.association_foreign_key)
+           ) && col_names.include?(fk_name.to_s)
           return fk_name
         end
-        if (fk_name = assoc.inverse_of&.options&.fetch(:foreign_key) { nil }) &&
-           col_names.include?(fk_name.to_s)
-          return fk_name
-        end
-        if assoc.respond_to?(:foreign_key) && (fk_name = assoc.foreign_key) &&
-           col_names.include?(fk_name.to_s)
-          return fk_name
-        end
-        if (fk_name = assoc.inverse_of&.foreign_key) &&
-           col_names.include?(fk_name.to_s)
-          return fk_name
-        end
-        if (fk_name = assoc.inverse_of&.association_foreign_key) &&
-           col_names.include?(fk_name.to_s)
-          return fk_name
-        end
+
         # Don't let this fool you -- we really are in search of the foreign key name here,
         # and Rails 3.0 and older used some fairly interesting conventions, calling it instead
         # the "primary_key_name"!
@@ -485,7 +488,8 @@ module DutyFree
       # of unique columns.  If there is no valid combination, throws an error.
       # Returns an object found by this means.
       def find_existing(uniques, cols, starred, import_template, keepers, train_we_came_in_here_on,
-                        row = nil, klass_or_collection = nil, template_all = nil, trim_prefix = '')
+                        row = nil, klass_or_collection = nil, template_all = nil, trim_prefix = '',
+                        assoc = nil)
         unless trim_prefix.blank?
           cols = cols.map { |c| c.start_with?(trim_prefix) ? c[trim_prefix.length..-1] : nil }
           starred = starred.each_with_object([]) do |v, s|
@@ -662,13 +666,30 @@ module DutyFree
         end
 
         return uniq_lookups.merge(criteria) if only_valid_uniques
-
         # If there's nothing to match upon then we're out
         return [nil, {}] if new_criteria_all_nil
 
         # With this criteria, find any matching has_many row we can so we can update it.
         # First try directly looking it up through ActiveRecord.
-        found_object = klass_or_collection.find_by(criteria)
+        klass_or_collection ||= self # Comes in as nil for has_one with no object yet attached
+        # HABTM proxy
+        # binding.pry if klass_or_collection.is_a?(ActiveRecord::Associations::CollectionProxy)
+        # if klass_or_collection.respond_to?(:proxy_association) && klass_or_collection.proxy_association.options.include?(:through)
+        if assoc.macro == :has_and_belongs_to_many || (assoc.macro == :has_many && assoc.options[:through])
+          klass_or_collection = assoc.klass # klass_or_collection.proxy_association.klass
+        end
+        # klass_or_collection.proxy_association.association_scope.to_a
+        # binding.pry if klass_or_collection.is_a?(Wotsit)
+        found_object = if klass_or_collection.is_a?(ActiveRecord::Base) # object from a has_one?
+                         puts assoc.macro
+                         existing_object = klass_or_collection
+                         klass_or_collection = klass_or_collection.class
+                         other_object = klass_or_collection.find_by(criteria)
+                         pk = klass_or_collection.primary_key
+                         existing_object.send(pk) == other_object&.send(pk) ? existing_object : other_object
+                       else
+                         klass_or_collection.find_by(criteria)
+                       end
         # If not successful, such as when fields are exposed via helper methods instead of being
         # real columns in the database tables, try this more intensive approach.  This is useful
         # if you had full name kind of data coming in on a spreadsheeet, but in the destination
@@ -736,14 +757,19 @@ module DutyFree
       end
     end # module ClassMethods
 
+    # unless build_tables.include?((foreign_class = tbs[2].class).underscore)
+    # build_table(build_tables, tbs[1].class, foreign_class, :has_one)
+
     # Called before building any object linked through a has_one or has_many so that foreign key IDs
     # can be added properly to those new objects.  Finally at the end also called to save everything.
     def self._save_pending(to_be_saved)
       while (tbs = to_be_saved.pop)
         # puts "Will be calling #{tbs[1].class.name} #{tbs[1]&.id} .#{tbs[2]} #{tbs[3].class.name} #{tbs[3]&.id}"
-
-        # Wire this one up if it had came from a has_one association
-        tbs[1].send(tbs[2], tbs[3]) if tbs[0] == tbs[1]
+        # Wire this one up if it had come from a has_one
+        if tbs[0] == tbs[1]
+          tbs[1].class.has_one(tbs[2]) unless tbs[1].respond_to?(tbs[2])
+          tbs[1].send(tbs[2], tbs[3])
+        end
 
         ais = (tbs.first.class.respond_to?(:around_import_save) && tbs.first.class.method(:around_import_save)) ||
               (respond_to?(:around_import_save) && method(:around_import_save))
@@ -764,7 +790,17 @@ module DutyFree
                 tbs[0] == tbs[1] || # From a has_one?
                 tbs.first.new_record?
 
-        tbs[1].send(tbs[2], tbs[3])
+        if tbs[1] == :has_and_belongs_to_many # also used by has_many :through associations
+          collection = tbs[3].send(tbs[2])
+          being_shoveled_id = tbs[0].send(tbs[0].class.primary_key)
+          if collection.empty? ||
+             !collection.pluck(collection.first.class.primary_key).include?(being_shoveled_id)
+            collection << tbs[0]
+            # puts collection.inspect
+          end
+        else # Traditional belongs_to
+          tbs[1].send(tbs[2], tbs[3])
+        end
       end
     end
 
@@ -783,23 +819,45 @@ module DutyFree
       template_detail_columns
     end
 
-    # Recurse and return two arrays -- one with all columns in sequence, and one a hierarchy of
-    # nested hashes to be used with ActiveRecord's .joins() to facilitate export.
-    def self._recurse_def(klass, array, import_template, order_by = [], assocs = [], joins = [], pre_prefix = '', prefix = '')
+    # Recurse and return three arrays -- one with all columns in sequence, and one a hierarchy of
+    # nested hashes to be used with ActiveRecord's .joins() to facilitate export, and finally
+    # one that lists tables that need to be built along the way.
+    def self._recurse_def(klass, cols, import_template, order_by = [], assocs = [], joins = [], pre_prefix = '', prefix = '', build_tables = [])
+      prefix = prefix[0..-2] if (is_build_table = prefix.end_with?('!'))
       prefixes = ::DutyFree::Util._prefix_join([pre_prefix, prefix])
-      # Confirm we can actually navigate through this association
-      prefix_assoc = (assocs.last&.klass || klass).reflect_on_association(prefix) if prefix.present?
-      if prefix_assoc
-        assocs = assocs.dup << prefix_assoc
-        if prefix_assoc.macro == :has_many && (pk = prefix_assoc.active_record.primary_key)
-          order_by << ["#{prefixes.tr('.', '_')}_", pk]
+
+      if prefix.present?
+        # An indication to build this table and model if it doesn't exist?
+        if is_build_table
+          namespaces = prefix.split('::')
+          model_name = namespaces.map { |part| part.singularize.camelize }.join('::')
+          prefix = namespaces.last
+          if (is_need_model = Object.const_defined?(model_name)) &&
+             (is_need_table = ActiveRecord::ConnectionAdapters::SchemaStatements.table_exists?(
+               (path_name = ::DutyFree::Util._prefix_join([prefixes, prefix.pluralize]))
+             ))
+            is_build_table = false
+          else
+            build_tables[path_name] = [namespaces, is_need_model, is_need_table] unless build_tables.include?(path_name)
+          end
+        end
+        unless is_build_table
+          # Confirm we can actually navigate through this association
+          prefix_assoc = (assocs.last&.klass || klass).reflect_on_association(prefix) if prefix.present?
+          if prefix_assoc
+            assocs = assocs.dup << prefix_assoc
+            if [:has_many, :has_and_belongs_to_many].include?(prefix_assoc.macro) &&
+               (pk = prefix_assoc.active_record.primary_key)
+              order_by << ["#{prefixes.tr('.', '_')}_", pk]
+            end
+          end
         end
       end
-      array = array.inject([]) do |s, col|
+      cols = cols.inject([]) do |s, col|
         s + if col.is_a?(Hash)
               col.inject([]) do |s2, v|
                 joins << { v.first.to_sym => (joins_array = []) }
-                s2 + _recurse_def(klass, (v.last.is_a?(Array) ? v.last : [v.last]), import_template, order_by, assocs, joins_array, prefixes, v.first.to_sym).first
+                s2 + _recurse_def(klass, (v.last.is_a?(Array) ? v.last : [v.last]), import_template, order_by, assocs, joins_array, prefixes, v.first.to_sym, build_tables).first
               end
             elsif col.nil?
               if assocs.empty?
@@ -808,13 +866,15 @@ module DutyFree
                 # Bring in from another class
                 joins << { prefix => (joins_array = []) }
                 # %%% Also bring in uniques and requireds
-                _recurse_def(klass, assocs.last.klass::IMPORT_TEMPLATE[:all], import_template, order_by, assocs, joins_array, prefixes).first
+                _recurse_def(klass, assocs.last.klass::IMPORT_TEMPLATE[:all], import_template, order_by, assocs, joins_array, prefixes, build_tables).first
               end
             else
               [::DutyFree::Column.new(col, pre_prefix, prefix, assocs, klass, import_template[:as])]
             end
       end
-      [array, joins]
+      # %%% End up having order_by be [["children_", "id"]]
+      # binding.pry
+      [cols, joins, build_tables]
     end
   end # module Extensions
 

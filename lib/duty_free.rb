@@ -21,8 +21,8 @@ if ActiveRecord.version < ::Gem::Version.new('5.0') &&
   end
 end
 
-# Allow Rails 4.0 and 4.1 to work with newer Ruby (>= 2.4) by avoiding a "stack level too deep" error
-# when ActiveSupport tries to smarten up Numeric by messing with Fixnum and Bignum at the end of:
+# Allow ActiveRecord 4.0 and 4.1 to work with newer Ruby (>= 2.4) by avoiding a "stack level too deep"
+# error when ActiveSupport tries to smarten up Numeric by messing with Fixnum and Bignum at the end of:
 # activesupport-4.0.13/lib/active_support/core_ext/numeric/conversions.rb
 if ActiveRecord.version < ::Gem::Version.new('4.2') &&
    ActiveRecord.version > ::Gem::Version.new('3.2') &&
@@ -33,12 +33,34 @@ if ActiveRecord.version < ::Gem::Version.new('4.2') &&
   Numeric.const_set('Bignum', OurBignum)
 end
 
-# Allow Rails < 3.2 to run with newer versions of Psych gem
+# Allow ActiveRecord < 3.2 to run with newer versions of Psych gem
 if BigDecimal.respond_to?(:yaml_tag) && !BigDecimal.respond_to?(:yaml_as)
   class BigDecimal
     class <<self
       alias yaml_as yaml_tag
     end
+  end
+end
+
+require 'duty_free/util'
+
+# Allow ActiveRecord < 3.2 to work with Ruby 2.7 and later
+if ActiveRecord.version < ::Gem::Version.new('3.2') &&
+   ::Gem::Version.new(RUBY_VERSION) >= ::Gem::Version.new('2.7')
+  # Remove circular reference for "now"
+  ::DutyFree::Util._patch_require(
+    'active_support/values/time_zone.rb', '/activesupport',
+    '  def parse(str, now=now)',
+    '  def parse(str, now=now())'
+  )
+  # Remove circular reference for "reflection" for ActiveRecord 3.1
+  if ActiveRecord.version >= ::Gem::Version.new('3.1')
+    ::DutyFree::Util._patch_require(
+      'active_record/associations/has_many_association.rb', '/activerecord',
+      'reflection = reflection)',
+      'reflection = reflection())',
+      :HasManyAssociation # Make sure the path for this guy is available to be autoloaded
+    )
   end
 end
 
@@ -205,6 +227,52 @@ ActiveSupport.on_load(:active_record) do
           end
         end
       end
+
+      # ActiveRecord 3.1 and 3.2 didn't try to bring in &block for the .extending() convenience thing
+      # that smartens up scopes, and Ruby 2.7 complained loudly about just doing the magical "Proc.new"
+      # that historically would just capture the incoming block.
+      module QueryMethods
+        unless instance_method(:extending).parameters.include?([:block, :block])
+          # These first two lines used to be:
+          # def extending(*modules)
+          #   modules << Module.new(&Proc.new) if block_given?
+
+          def extending(*modules, &block)
+            modules << Module.new(&block) if block_given?
+
+            return self if modules.empty?
+
+            relation = clone
+            relation.send(:apply_modules, modules.flatten)
+            relation
+          end
+        end
+      end
+
+      # Same kind of thing for ActiveRecord::Scoping::Default#default_scope
+      module Scoping
+        module Default
+          module ClassMethods
+            if instance_methods.include?(:default_scope) &&
+               !instance_method(:default_scope).parameters.include?([:block, :block])
+              # Fix for AR 3.2-5.1
+              def default_scope(scope = nil, &block)
+                scope = block if block_given?
+
+                if scope.is_a?(Relation) || !scope.respond_to?(:call)
+                  raise ArgumentError,
+                        'Support for calling #default_scope without a block is removed. For example instead ' \
+                        "of `default_scope where(color: 'red')`, please use " \
+                        "`default_scope { where(color: 'red') }`. (Alternatively you can just redefine " \
+                        'self.default_scope.)'
+                end
+
+                self.default_scopes += [scope]
+              end
+            end
+          end
+        end
+      end
     end
   end
 
@@ -248,29 +316,10 @@ ActiveSupport.on_load(:active_record) do
   unless DateTime.instance_methods.include?(:nsec)
     class DateTime < Date
       def nsec
-        (sec_fraction * 1000000000).to_i
+        (sec_fraction * 1_000_000_000).to_i
       end
     end
   end
 
   include ::DutyFree::Extensions
 end
-
-# # Require frameworks
-# if defined?(::Rails)
-#   # Rails module is sometimes defined by gems like rails-html-sanitizer
-#   # so we check for presence of Rails.application.
-#   if defined?(::Rails.application)
-#     require "duty_free/frameworks/rails"
-#   else
-#     ::Kernel.warn(<<-EOS.freeze
-# DutyFree has been loaded too early, before rails is loaded. This can
-# happen when another gem defines the ::Rails namespace, then DF is loaded,
-# all before rails is loaded. You may want to reorder your Gemfile, or defer
-# the loading of DF by using `require: false` and a manual require elsewhere.
-# EOS
-# )
-#   end
-# else
-#   require "duty_free/frameworks/active_record"
-# end

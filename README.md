@@ -52,12 +52,15 @@ seamlessly importing and exporting that data.
 | unreleased     | master     |        | >= 2.3.5 | >= 3.0, < 6.1 |
 | 1.0            | 1-stable   | v1.x   | >= 2.3.5 | >= 3.0, < 6.1 |
 
-Note that if you are running Rails older than v4.2 on Ruby v2.4 or newer then normally this
-fails because Fixnum and Bignum were merged to become Integer with newer versions of Ruby.
-This gem provides a patch for this scenario so everything will work.
+Duty Free has a compatibility layer in order to make testing the broad range of supported
+versions of ActiveRecord a bit easier.  When running Rails older than v4.2 on Ruby v2.4
+or newer then normally everything fails because Fixnum and Bignum were merged to become
+Integer with newer versions of Ruby.  This gem provides a patch for this scenario, as well
+as patches for places Ruby 2.7 would normally error out due to circular references in
+method definitions in TimeZone and HasManyAssociation.
 
-As well if you are running Rails older than v4.0 then a patch to ActiveRecord will be applied
-to add #find_by and an updated version of #pluck so it can be compatible with this gem.  This
+If you are running Rails older than v4.0 then a patch to ActiveRecord will be applied to
+add #find_by and an updated version of #pluck so it can be compatible with this gem.  This
 should generally not negatively impact older applications, and allows them as well to use
 these newer methods.
 

@@ -8,8 +8,6 @@ require 'duty_free'
 require 'active_record/railtie'
 # require 'action_controller/railtie'
 
-require 'duty_free'
-
 # Set up one common way to call #update for testing
 module ActiveRecord
   module Persistence

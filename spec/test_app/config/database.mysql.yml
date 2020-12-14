@@ -3,7 +3,7 @@ test: &test
   encoding: utf8
   database: duty_free_test
   pool: 5
-  username: root
+  username: duty_free
   password:
   host: localhost
 

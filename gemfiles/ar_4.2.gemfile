@@ -10,7 +10,7 @@ gem 'database_cleaner', '~> 1.6'
 gem 'ffaker', '~> 2.11'
 gem 'generator_spec', '~> 0.9.4'
 gem 'memory_profiler', '~> 0.9.14'
-# gem 'mysql2', '< 0.5.2'
+gem 'mysql2', '< 0.5.2' if Bundler::Dsl.instance_variable_get(:@_has_mysql)
 gem 'pg', '>= 0.18', '< 1.0'
 gem 'pry-byebug', '~> 3.7.0'
 gem 'rake', '~> 13.0'

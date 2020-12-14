@@ -306,7 +306,7 @@ ActiveSupport.on_load(:active_record) do
     end
   end
 
-  if ActiveRecord.version < ::Gem::Version.new('5.0')
+  if ActiveRecord.version < ::Gem::Version.new('5.0') && Object.const_defined?('PG::Connection')
     # Avoid pg gem deprecation warning:  "You should use PG::Connection, PG::Result, and PG::Error instead"
     PGconn = PG::Connection
     PGresult = PG::Result

@@ -40,7 +40,10 @@ Gem::Specification.new do |s|
   s.add_development_dependency 'rubocop', '~> 0.89.1'
   s.add_development_dependency 'rubocop-rspec', '~> 1.42.0'
 
-  s.add_development_dependency 'mysql2', '~> 0.5'
+  # Check for presence of libmysqlclient-dev, default-libmysqlclient-dev, libmariadb-dev, mysql-devel, etc
+  require 'mkmf'
+  Bundler::Dsl.instance_variable_set(:@_has_mysql, (has_mysql = have_library('mysqlclient')))
+  s.add_development_dependency 'mysql2', '~> 0.5' if has_mysql
   s.add_development_dependency 'pg', '>= 0.18', '< 2.0'
   s.add_development_dependency 'sqlite3', '~> 1.4'
 end

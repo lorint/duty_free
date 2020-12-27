@@ -30,7 +30,7 @@ module DutyFree
       elsif piece.is_a?(Hash)
         names += piece.inject([]) do |s, v|
           new_prefix = "#{prefix}#{v.first}_"
-          s << new_prefix
+          s << [v.last.shift, new_prefix]
           s + _recurse_arel(v.last, new_prefix)
         end
 
@@ -45,7 +45,7 @@ module DutyFree
           # The right side here at the top is the very last table, and anywhere else down the tree it is
           # the later "JOIN" table of this pair.  (The table that comes after all the rest of the JOINs
           # from the left side.)
-          names << (piece.right.table_alias || piece.right.name)
+          names << [_arel_table_type(piece.right), (piece.right.table_alias || piece.right.name)]
         else # "Normal" setup, fed from a JoinSource which has an array of JOINs
           # The left side is the "JOIN" table
           names += _recurse_arel(piece.left)
@@ -53,18 +53,25 @@ module DutyFree
         end
         # rubocop:enable Style/IdenticalConditionalBranches
       elsif piece.is_a?(Arel::Table) # Table
-        names << (piece.table_alias || piece.name)
+        names << [_arel_table_type(piece), (piece.table_alias || piece.name)]
       elsif piece.is_a?(Arel::Nodes::TableAlias) # Alias
         # Can get the real table name from:  self._recurse_arel(piece.left)
-        names << piece.right.to_s # This is simply a string; the alias name itself
+        names << [_arel_table_type(piece.left), piece.right.to_s] # This is simply a string; the alias name itself
       elsif piece.is_a?(Arel::Nodes::JoinSource) # Leaving this until the end because AR < 3.2 doesn't know at all about JoinSource!
         # The left side is the "FROM" table
         # names += _recurse_arel(piece.left)
-        names << (piece.left.table_alias || piece.left.name)
+        names << [_arel_table_type(piece.left), (piece.left.table_alias || piece.left.name)]
         # The right side is an array of all JOINs
         names += piece.right.inject([]) { |s, v| s + _recurse_arel(v) }
       end
       names
+    end
+
+    def self._arel_table_type(tbl)
+      # AR < 4.2 doesn't have type_caster at all, so rely on an instance variable getting set
+      # AR 4.2 - 5.1 have buggy type_caster entries for the root node
+      # 5.2-6.0 does type_caster just fine, no bugs there.
+      tbl.instance_variable_get(:@_arel_table_type) || tbl.send(:type_caster).send(:types)
     end
 
     def self._prefix_join(prefixes, separator = nil)
@@ -109,8 +116,9 @@ module DutyFree
           Dir.mkdir(new_part) unless Dir.exist?(new_part)
           new_part
         end
-        if ::DutyFree::Util._write_patched(folder_matcher, module_filename, extension, custom_require_dir, nil, search_text, replacement_text)
-          alp.unshift(custom_require_dir) unless alp.include?(custom_require_dir)
+        if ::DutyFree::Util._write_patched(folder_matcher, module_filename, extension, custom_require_dir, nil, search_text, replacement_text) &&
+           !alp.include?(custom_require_dir)
+          alp.unshift(custom_require_dir)
         end
       else
         unless (require_overrides = ::DutyFree::Util.instance_variable_get(:@_require_overrides))
@@ -136,7 +144,7 @@ module DutyFree
                   is_replaced = false
                   if (replacement_path = ::DutyFree::Util._write_patched(folder_matcher, name, extension, ::DutyFree::Util._custom_require_dir, patched_filename, search_text, replacement_text))
                     is_replaced = Kernel.send(:orig_require, replacement_path)
-                  else
+                  elsif replacement_path.nil?
                     puts "Couldn't find #{name} to require it!"
                   end
                   is_replaced
@@ -164,11 +172,13 @@ module DutyFree
       custom_require_dir
     end
 
+    # Returns the full path to the replaced filename, or
+    # false if the file already exists, and nil if it was unable to write anything.
     def self._write_patched(folder_matcher, name, extension, dir, patched_filename, search_text, replacement_text)
       # See if our replacement file might already exist for some reason
       name = +"/#{name}" unless name.start_with?('/')
       name << extension unless name.end_with?(extension)
-      return nil if File.exist?(replacement_path = "#{dir}#{patched_filename || name}")
+      return false if File.exist?(replacement_path = "#{dir}#{patched_filename || name}")
 
       # Dredge up the original .rb file, doctor it, and then require it instead
       num_written = nil

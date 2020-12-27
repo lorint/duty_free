@@ -22,10 +22,15 @@ Layout/FirstHashElementIndentation:
 Layout/LineLength:
   Max: 370
 
+Lint/ConstantDefinitionInBlock: # (new in 0.91)
+  Enabled: true
+  Exclude:
+    - spec/**/*_spec.rb
+
 Metrics/AbcSize:
   Exclude:
     - spec/test_app/db/migrate/*
-  Max: 383
+  Max: 386
 
 Metrics/BlockLength:
   Max: 198
@@ -53,7 +58,7 @@ Metrics/ModuleLength:
   Max: 484
 
 Metrics/ParameterLists:
-  Max: 11
+  Max: 12
 
 Metrics/PerceivedComplexity:
   Max: 135
@@ -63,6 +68,8 @@ Style/FrozenStringLiteralComment:
     - 'gemfiles/*.gemfile'
 
 # All other cops, simply to enable them:
+Layout/BeginEndAlignment: # (new in 0.91)
+  Enabled: true
 
 Layout/EmptyLinesAroundAttributeAccessor:
   Enabled: true
@@ -79,13 +86,25 @@ Lint/DeprecatedOpenSSLConstant:
 Lint/DuplicateElsifCondition:
   Enabled: true
 
+Lint/DuplicateRequire: # (new in 0.90)
+  Enabled: true
+
 Lint/DuplicateRescueException:
   Enabled: true
 
 Lint/EmptyConditionalBody:
   Enabled: true
 
+Lint/EmptyFile: # (new in 0.90)
+  Enabled: true
+
 Lint/FloatComparison:
+  Enabled: true
+
+Lint/HashCompareByIdentity: # (new in 0.93)
+  Enabled: true
+
+Lint/IdentityComparison: # (new in 0.91)
   Enabled: true
 
 Lint/MissingSuper:
@@ -100,6 +119,9 @@ Lint/OutOfRangeRegexpRef:
 Lint/RaiseException:
   Enabled: true
 
+Lint/RedundantSafeNavigation: # (new in 0.93)
+  Enabled: true
+
 Lint/SelfAssignment:
   Enabled: true
 
@@ -109,7 +131,16 @@ Lint/StructNewOverride:
 Lint/TopLevelReturnWithArgument:
   Enabled: true
 
+Lint/TrailingCommaInAttributeDeclaration: # (new in 0.90)
+  Enabled: true
+
 Lint/UnreachableLoop:
+  Enabled: true
+
+Lint/UselessMethodDefinition: # (new in 0.90)
+  Enabled: true
+
+Lint/UselessTimes: # (new in 0.91)
   Enabled: true
 
 Style/AccessorGrouping:
@@ -122,6 +153,12 @@ Style/BisectedAttrAccessor:
   Enabled: true
 
 Style/CaseLikeIf:
+  Enabled: true
+
+Style/ClassEqualityComparison: # (new in 0.93)
+  Enabled: true
+
+Style/CombinableLoops: # (new in 0.90)
   Enabled: true
 
 Style/ExplicitBlockArgument:
@@ -148,6 +185,9 @@ Style/HashTransformKeys:
 Style/HashTransformValues:
   Enabled: true
 
+Style/KeywordParametersOrder: # (new in 0.90)
+  Enabled: true
+
 Style/OptionalBooleanParameter:
   Enabled: true
 
@@ -166,10 +206,16 @@ Style/RedundantRegexpCharacterClass:
 Style/RedundantRegexpEscape:
   Enabled: true
 
+Style/RedundantSelfAssignment: # (new in 0.90)
+  Enabled: true
+
 Style/SingleArgumentDig:
   Enabled: true
 
 Style/SlicingWithRange:
+  Enabled: true
+
+Style/SoleNestedConditional: # (new in 0.89)
   Enabled: true
 
 Style/StringConcatenation:

@@ -9,7 +9,7 @@ gemfile(true) do
   ruby '2.6.5'
   source 'https://rubygems.org'
   gem 'activerecord', '5.1.7'
-  gem 'minitest', '5.10.3'
+  gem 'minitest', '5.14.2'
   gem 'duty_free', '1.0.0'
   gem 'sqlite3'
 end

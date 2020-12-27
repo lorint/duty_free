@@ -129,12 +129,16 @@ end
 # Major compatibility fixes for ActiveRecord < 4.2
 # ================================================
 ActiveSupport.on_load(:active_record) do
-  # Rails < 4.0 cannot do #find_by, or do #pluck on multiple columns, so here are the patches:
+  # Rails < 4.0 cannot do #find_by, #find_or_create_by, or do #pluck on multiple columns, so here are the patches:
   if ActiveRecord.version < ::Gem::Version.new('4.0')
     module ActiveRecord
       module Calculations # Normally find_by is in FinderMethods, which older AR doesn't have
         def find_by(*args)
           where(*args).limit(1).to_a.first
+        end
+
+        def find_or_create_by(attributes, &block)
+          find_by(attributes) || create(attributes, &block)
         end
 
         def pluck(*column_names)
@@ -196,7 +200,7 @@ ActiveSupport.on_load(:active_record) do
       unless Base.is_a?(Calculations)
         class Base
           class << self
-            delegate :pluck, :find_by, to: :scoped
+            delegate :pluck, :find_by, :find_or_create_by, to: :scoped
           end
         end
       end
@@ -278,39 +282,31 @@ ActiveSupport.on_load(:active_record) do
 
   # Rails < 4.2 is not innately compatible with Ruby 2.4 and later, and comes up with:
   # "TypeError: Cannot visit Integer" unless we patch like this:
-  unless ::Gem::Version.new(RUBY_VERSION) < ::Gem::Version.new('2.4')
-    unless Arel::Visitors::DepthFirst.private_instance_methods.include?(:visit_Integer)
-      module Arel
-        module Visitors
-          class DepthFirst < Visitor
-            alias visit_Integer terminal
-          end
+  if ::Gem::Version.new(RUBY_VERSION) >= ::Gem::Version.new('2.4') &&
+     !Arel::Visitors::DepthFirst.private_instance_methods.include?(:visit_Integer)
+    module Arel
+      module Visitors
+        class DepthFirst < Visitor
+          alias visit_Integer terminal
+        end
 
-          class Dot < Visitor
-            alias visit_Integer visit_String
-          end
+        class Dot < Visitor
+          alias visit_Integer visit_String
+        end
 
-          class ToSql < Visitor
-          private
+        class ToSql < Visitor
+        private
 
-            # ActiveRecord before v3.2 uses Arel < 3.x, which does not have Arel#literal.
-            unless private_instance_methods.include?(:literal)
-              def literal(obj)
-                obj
-              end
+          # ActiveRecord before v3.2 uses Arel < 3.x, which does not have Arel#literal.
+          unless private_instance_methods.include?(:literal)
+            def literal(obj)
+              obj
             end
-            alias visit_Integer literal
           end
+          alias visit_Integer literal
         end
       end
     end
-  end
-
-  if ActiveRecord.version < ::Gem::Version.new('5.0') && Object.const_defined?('PG::Connection')
-    # Avoid pg gem deprecation warning:  "You should use PG::Connection, PG::Result, and PG::Error instead"
-    PGconn = PG::Connection
-    PGresult = PG::Result
-    PGError = PG::Error
   end
 
   unless DateTime.instance_methods.include?(:nsec)
@@ -321,5 +317,106 @@ ActiveSupport.on_load(:active_record) do
     end
   end
 
+  # First part of arel_table_type stuff:
+  # ------------------------------------
+  # (more found below)
+  if ActiveRecord.version < ::Gem::Version.new('5.0')
+    # Used by Util#_arel_table_type
+    module ActiveRecord
+      class Base
+        def self.arel_table
+          @arel_table ||= Arel::Table.new(table_name, arel_engine).tap do |x|
+            x.instance_variable_set(:@_arel_table_type, self)
+          end
+        end
+      end
+    end
+  end
+
   include ::DutyFree::Extensions
+end
+
+# Do this earlier because stuff here gets mixed into JoinDependency::JoinAssociation and AssociationScope
+if ActiveRecord.version < ::Gem::Version.new('5.0') && Object.const_defined?('PG::Connection')
+  # Avoid pg gem deprecation warning:  "You should use PG::Connection, PG::Result, and PG::Error instead"
+  PGconn = PG::Connection
+  PGresult = PG::Result
+  PGError = PG::Error
+end
+
+# More arel_table_type stuff:
+# ---------------------------
+if ActiveRecord.version < ::Gem::Version.new('5.2')
+  # Specifically for AR 3.1 and 3.2 to avoid:  "undefined method `delegate' for ActiveRecord::Reflection::ThroughReflection:Class"
+  require 'active_support/core_ext/module/delegation' if ActiveRecord.version < ::Gem::Version.new('4.0')
+  # Used by Util#_arel_table_type
+  module ActiveRecord
+    module Reflection
+      # AR < 4.0 doesn't know about join_table and derive_join_table
+      unless AssociationReflection.instance_methods.include?(:join_table)
+        class AssociationReflection < MacroReflection
+          def join_table
+            @join_table ||= options[:join_table] || derive_join_table
+          end
+
+        private
+
+          def derive_join_table
+            [active_record.table_name, klass.table_name].sort.join("\0").gsub(/^(.*[._])(.+)\0\1(.+)/, '\1\2_\3').gsub("\0", '_')
+          end
+        end
+      end
+    end
+
+    module Associations
+      # Specific to AR 4.2 - 5.1:
+      if Associations.const_defined?('JoinDependency') && JoinDependency.private_instance_methods.include?(:table_aliases_for)
+        class JoinDependency
+        private
+
+          if ActiveRecord.version < ::Gem::Version.new('5.1') # 4.2 or 5.0
+            def table_aliases_for(parent, node)
+              node.reflection.chain.map do |reflection|
+                alias_tracker.aliased_table_for(
+                  reflection.table_name,
+                  table_alias_for(reflection, parent, reflection != node.reflection)
+                ).tap do |x|
+                  # %%% Specific only to Rails 4.2 (and maybe 4.1?)
+                  x = x.left if x.is_a?(Arel::Nodes::TableAlias)
+                  y = reflection.chain.find { |c| c.table_name == x.name }
+                  x.instance_variable_set(:@_arel_table_type, y.klass)
+                end
+              end
+            end
+          end
+        end
+      elsif Associations.const_defined?('JoinHelper') && JoinHelper.private_instance_methods.include?(:construct_tables)
+        module JoinHelper
+        private
+
+          # AR > 3.0 and < 4.2 (%%% maybe only < 4.1?) uses construct_tables like this:
+          def construct_tables
+            tables = []
+            chain.each do |reflection|
+              tables << alias_tracker.aliased_table_for(
+                table_name_for(reflection),
+                table_alias_for(reflection, reflection != self.reflection)
+              ).tap do |x|
+                x = x.left if x.is_a?(Arel::Nodes::TableAlias)
+                x.instance_variable_set(:@_arel_table_type, reflection.chain.find { |c| c.table_name == x.name }.klass)
+              end
+
+              next unless reflection.source_macro == :has_and_belongs_to_many
+
+              tables << alias_tracker.aliased_table_for(
+                (reflection.source_reflection || reflection).join_table,
+                table_alias_for(reflection, true)
+              )
+            end
+            tables
+          end
+        end
+      end
+    end
+  end # module ActiveRecord
 end

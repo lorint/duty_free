@@ -285,10 +285,11 @@ module DutyFree
           v.each_with_index do |item, idx|
             # This is where most of the commas get printed, so you can do "#{child_count}," to diagnose things
             print ',' if idx.positive? && indent >= 0
-            if item.is_a?(Hash)
+            case item
+            when Hash
               # puts '^' unless child_count < 5 || indent.negative?
               child_count = _template_pretty_print(item, indent + 2, child_count)
-            elsif item.is_a?(Symbol)
+            when Symbol
               if indent.negative?
                 child_count += 1
               else

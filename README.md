@@ -25,6 +25,7 @@ seamlessly importing and exporting that data.
   - [1.b. Installation](#1b-installation)
   - [1.c. Generating Templates](#1c-generating-templates)
   - [1.d. Exporting Data](#1d-exporting-data)
+  - [1.e. Using rails g df_export](#1e-using-rails-g-df-export)
   - [1.e. Importing Data](#1e-importing-data)
 - [2. More Fancy Exports](#2-limiting-what-is-versioned-and-when)
   - [2.a. Simplify Column Names Using Aliases](#2a-simplify-column-names-using-aliases)
@@ -49,20 +50,40 @@ seamlessly importing and exporting that data.
 
 | duty_free      | branch     | tags   | ruby     | activerecord  |
 | -------------- | ---------- | ------ | -------- | ------------- |
-| unreleased     | master     |        | >= 2.3.5 | >= 3.0, < 6.1 |
-| 1.0            | 1-stable   | v1.x   | >= 2.3.5 | >= 3.0, < 6.1 |
+| unreleased     | master     |        | >= 2.3.5 | >= 3.0, < 6.2 |
+| 1.0            | 1-stable   | v1.x   | >= 2.3.5 | >= 3.0, < 6.2 |
 
-Duty Free has a compatibility layer in order to make testing the broad range of supported
-versions of ActiveRecord a bit easier.  When running Rails older than v4.2 on Ruby v2.4
-or newer then normally everything fails because Fixnum and Bignum were merged to become
-Integer with newer versions of Ruby.  This gem provides a patch for this scenario, as well
-as patches for places Ruby 2.7 would normally error out due to circular references in
-method definitions in TimeZone and HasManyAssociation.
+Duty Free has a compatibility layer which is automatically applied when used along with older
+versions of Rails.  This is provided in order to more easily test the broad range of supported
+versions of ActiveRecord.  When running Rails older than v4.2 on Ruby v2.4 or newer then
+normally everything fails because Fixnum and Bignum were merged to become Integer with newer
+versions of Ruby.  This gem provides a patch for this scenario, as well as patches for places
+Ruby 2.7 would normally error out due to circular references in method definitions in TimeZone
+and HasManyAssociation.
 
-If you are running Rails older than v4.0 then a patch to ActiveRecord will be applied to
-add #find_by and an updated version of #pluck so it can be compatible with this gem.  This
-should generally not negatively impact older applications, and allows them as well to use
-these newer methods.
+When using the DutyFree gem with Rails 3.x, more patches are applied to those antique versions
+of ActiveRecord in order to add #find_by, #find_or_create_by, and an updated version of #pluck.
+This fills in the gaps to allow the gem to work along with the limitations of early versions of
+ActiveRecord.  The motivation behind providing support for such old versions of ActiveRecord is
+simply in the hopes that data in older applications can easily be extracted and put into newer
+systems, without worrying about the details of maintaining foreign keys and such during the
+transition.
+
+Speaking of newer versions of Ruby, if you'd like to use the latest version then for those using
+RVM you might have noticed that it won't yet install.  Here's the secret to install Ruby 3.0. First
+make sure you're upgraded to the latest stable version of RVM:
+
+    rvm get stable
+
+and then download the .gz file for Ruby 3.0 from:
+
+    https://cache.ruby-lang.org/pub/ruby/3.0/ruby-3.0.0.tar.gz
+
+and finally move this .gz file into your .rvm/archives folder, while also renaming it in the process
+to be a .tar.bz2, which can then be installed:
+
+    mv ~/Downloads/ruby-3.0.0.tar.gz ~/.rvm/archives/ruby-3.0.0.tar.bz2
+    rvm install ruby-3.0.0
 
 ### 1.b. Installation
 
@@ -70,8 +91,8 @@ these newer methods.
 
     `gem 'duty_free'`
 
-1. To test things, then from within `rails c`, you can see that it's working by exporting some data from
-   one of your models.  In this case let's have our `Product` data go out to an array.  `Product` does not yet specify anything about DutyFree, and seeing this the `#df_export` routine automatically generates its own temporary template behind-the-scenes in order to define columns.  The parameter `true` being fed in says to not just show a header with column names, but also export all data as well.  To retrieve the data, the generated template is adapted to leverage ActiveRecord's `#left_joins` call to create an appropriate SQL query and retrieve all the Product data:
+1. To test things, from within `rails c`, you can see that it's working by exporting some data from
+   one of your models.  In this case let's have our `Product` data go out to an array.  `Product` does not yet specify anything about DutyFree, and seeing this, the `#df_export` routine automatically generates its own temporary template behind-the-scenes in order to define columns.  The parameter `true` being fed in says to not just show a header with column names, but also export all data as well.  To retrieve the data, the generated template is adapted to leverage ActiveRecord's `#left_joins` call to create an appropriate SQL query and retrieve all the Product data:
 
     ```ruby
     northwind$ bin/rails c
@@ -89,7 +110,7 @@ these newer methods.
 If you'd like to examine the default internal template that is generated, then use `#suggest_template` like this:
 
 ```ruby
-2.6.5 :002 > Product.suggest_template
+3.0.0 :002 > Product.suggest_template
 
 # Place the following into app/models/product.rb:
 # Generated by:  Product.suggest_template(0, false, true)
@@ -103,7 +124,7 @@ IMPORT_TEMPLATE = {
 # ------------------------------------------
 
  => {:uniques=>[:product_name], :required=>[], :all=>[:product_name, ...
-2.6.5 :002 >
+3.0.0 :002 >
 ```
 
 Note the constant `IMPORT_TEMPLATE`.  Although its name might make it sound at first like it's only used for importing, as we have seen from above this template is also used for exporting.  Specifically the `:all` portion defines the `belongs_to` and `has_many` links to follow, as well as all columns to retrieve from related tables.
@@ -147,7 +168,11 @@ The `:order_details` entry is there simply because we specified to also include 
 
 (Coming soon)
 
-### 1.e. Importing Data
+### 1.e. Using rails g df_export
+
+(Coming soon)
+
+### 1.f. Importing Data
 
 (Coming soon)
 
@@ -162,14 +187,6 @@ The `:order_details` entry is there simply because we specified to also include 
 (Coming soon)
 
 ### 2.c. Seeing the Resulting JOIN Strategy and SQL Used
-
-(Coming soon)
-
-### 2.d. Turning DutyFree Off
-
-(Coming soon)
-
-### 2.e. Limiting the Number of Versions Created
 
 (Coming soon)
 

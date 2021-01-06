@@ -132,7 +132,8 @@ ActiveSupport.on_load(:active_record) do
   # Rails < 4.0 cannot do #find_by, #find_or_create_by, or do #pluck on multiple columns, so here are the patches:
   if ActiveRecord.version < ::Gem::Version.new('4.0')
     module ActiveRecord
-      module Calculations # Normally find_by is in FinderMethods, which older AR doesn't have
+      # Normally find_by is in FinderMethods, which older AR doesn't have
+      module Calculations
         def find_by(*args)
           where(*args).limit(1).to_a.first
         end
@@ -283,6 +284,7 @@ ActiveSupport.on_load(:active_record) do
   # Rails < 4.2 is not innately compatible with Ruby 2.4 and later, and comes up with:
   # "TypeError: Cannot visit Integer" unless we patch like this:
   if ::Gem::Version.new(RUBY_VERSION) >= ::Gem::Version.new('2.4') &&
+     Arel::Visitors.const_defined?('DepthFirst') &&
      !Arel::Visitors::DepthFirst.private_instance_methods.include?(:visit_Integer)
     module Arel
       module Visitors
@@ -350,6 +352,7 @@ if ActiveRecord.version < ::Gem::Version.new('5.2')
   # Specifically for AR 3.1 and 3.2 to avoid:  "undefined method `delegate' for ActiveRecord::Reflection::ThroughReflection:Class"
   require 'active_support/core_ext/module/delegation' if ActiveRecord.version < ::Gem::Version.new('4.0')
   # Used by Util#_arel_table_type
+  # rubocop:disable Style/CommentedKeyword
   module ActiveRecord
     module Reflection
       # AR < 4.0 doesn't know about join_table and derive_join_table
@@ -419,4 +422,5 @@ if ActiveRecord.version < ::Gem::Version.new('5.2')
       end
     end
   end # module ActiveRecord
+  # rubocop:enable Style/CommentedKeyword
 end

@@ -36,7 +36,7 @@ module DutyFree
     end
 
     def titleize
-      @titleized ||= to_sym.titleize
+      @titleize ||= to_sym.titleize
     end
 
     def path
@@ -45,7 +45,7 @@ module DutyFree
 
     # The snake-cased column name to be used for building the full list of template_columns
     def to_sym
-      @sym_string ||= ::DutyFree::Util._prefix_join(
+      @to_sym ||= ::DutyFree::Util._prefix_join(
         [pre_prefix, prefix, ::DutyFree::Util._clean_name(name, import_template_as)],
         '_'
       ).tr('.', '_')

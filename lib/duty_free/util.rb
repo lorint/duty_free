@@ -25,9 +25,10 @@ module DutyFree
     def self._recurse_arel(piece, prefix = '')
       names = []
       # Our JOINs mashup of nested arrays and hashes
-      if piece.is_a?(Array)
+      case piece
+      when Array
         names += piece.inject([]) { |s, v| s + _recurse_arel(v, prefix) }
-      elsif piece.is_a?(Hash)
+      when Hash
         names += piece.inject([]) do |s, v|
           new_prefix = "#{prefix}#{v.first}_"
           s << [v.last.shift, new_prefix]
@@ -35,7 +36,7 @@ module DutyFree
         end
 
       # ActiveRecord AREL objects
-      elsif piece.is_a?(Arel::Nodes::Join) # INNER or OUTER JOIN
+      when Arel::Nodes::Join # INNER or OUTER JOIN
         # rubocop:disable Style/IdenticalConditionalBranches
         if piece.right.is_a?(Arel::Table) # Came in from AR < 3.2?
           # Arel 2.x and older is a little curious because these JOINs work "back to front".
@@ -52,12 +53,12 @@ module DutyFree
           # (The right side of these is the "ON" clause)
         end
         # rubocop:enable Style/IdenticalConditionalBranches
-      elsif piece.is_a?(Arel::Table) # Table
+      when Arel::Table # Table
         names << [_arel_table_type(piece), (piece.table_alias || piece.name)]
-      elsif piece.is_a?(Arel::Nodes::TableAlias) # Alias
+      when Arel::Nodes::TableAlias # Alias
         # Can get the real table name from:  self._recurse_arel(piece.left)
         names << [_arel_table_type(piece.left), piece.right.to_s] # This is simply a string; the alias name itself
-      elsif piece.is_a?(Arel::Nodes::JoinSource) # Leaving this until the end because AR < 3.2 doesn't know at all about JoinSource!
+      when Arel::Nodes::JoinSource # Leaving this until the end because AR < 3.2 doesn't know at all about JoinSource!
         # The left side is the "FROM" table
         # names += _recurse_arel(piece.left)
         names << [_arel_table_type(piece.left), (piece.left.table_alias || piece.left.name)]
@@ -70,8 +71,11 @@ module DutyFree
     def self._arel_table_type(tbl)
       # AR < 4.2 doesn't have type_caster at all, so rely on an instance variable getting set
       # AR 4.2 - 5.1 have buggy type_caster entries for the root node
-      # 5.2-6.0 does type_caster just fine, no bugs there.
-      tbl.instance_variable_get(:@_arel_table_type) || tbl.send(:type_caster).send(:types)
+      tbl.instance_variable_get(:@_arel_table_type) ||
+        # 5.2-6.1 does type_caster just fine, no bugs there, but the property with the type differs:
+        # 5.2 has "types" as public, 6.0 "types" as private, and 6.1 "klass" as private.
+        ((tc = tbl.send(:type_caster)) && tc.instance_variable_get(:@types)) ||
+        tc.send(:klass)
     end
 
     def self._prefix_join(prefixes, separator = nil)

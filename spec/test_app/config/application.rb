@@ -49,7 +49,7 @@ module TestApp
       config.active_record.time_zone_aware_types = [:datetime]
     end
 
-    if (ar = config.active_record).respond_to?(:sqlite3) && ar.sqlite3.respond_to?(:represent_boolean_as_integer)
+    if v < Gem::Version.new('6.0') && (ar = config.active_record).respond_to?(:sqlite3) && ar.sqlite3.respond_to?(:represent_boolean_as_integer)
       ar.sqlite3.represent_boolean_as_integer = true
     end
   end

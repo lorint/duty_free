@@ -6,6 +6,7 @@ require 'duty_free/suggest_template'
 
 # :nodoc:
 module DutyFree
+  # rubocop:disable Style/CommentedKeyword
   module Extensions
     MAX_ID = Arel.sql('MAX(id)')
 
@@ -588,8 +589,6 @@ module DutyFree
               to_be_saved << [obj = obj_klass.new]
             end
             sub_obj = nil
-            is_has_one = false
-            has_ones = []
             polymorphics = []
             sub_objects = {}
             this_path = nil
@@ -800,7 +799,9 @@ module DutyFree
         if my_after_import
           last_arg_idx = my_after_import.parameters.length - 1
           arguments = [ret][0..last_arg_idx]
+          # rubocop:disable Lint/UselessAssignment
           ret = ret2 if (ret2 = my_after_import.call(*arguments)).is_a?(Hash)
+          # rubocop:enable Lint/UselessAssignment
         end
       end
       ret
@@ -962,6 +963,7 @@ module DutyFree
       [cols, joins]
     end
   end # module Extensions
+  # rubocop:enable Style/CommentedKeyword
 
   # Rails < 4.0 doesn't have ActiveRecord::RecordNotUnique, so use the more generic ActiveRecord::ActiveRecordError instead
   ar_not_unique_error = ActiveRecord.const_defined?('RecordNotUnique') ? ActiveRecord::RecordNotUnique : ActiveRecord::ActiveRecordError

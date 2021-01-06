@@ -27,7 +27,7 @@ Gem::Specification.new do |s|
   s.required_ruby_version = '>= 2.3.5'
   # rubocop:enable Gemspec/RequiredRubyVersion
 
-  s.add_dependency 'activerecord', ['>= 3.0', '< 6.1']
+  s.add_dependency 'activerecord', ['>= 3.0', '< 6.2']
 
   s.add_development_dependency 'appraisal', '~> 2.2'
   s.add_development_dependency 'pry-byebug', '~> 3.7.0'
@@ -37,7 +37,7 @@ Gem::Specification.new do |s|
   s.add_development_dependency 'memory_profiler', '~> 0.9.14'
   s.add_development_dependency 'rake', '~> 13.0'
   s.add_development_dependency 'rspec-rails', '~> 4.0'
-  s.add_development_dependency 'rubocop', '~> 0.89.1'
+  s.add_development_dependency 'rubocop', '~> 0.93'
   s.add_development_dependency 'rubocop-rspec', '~> 1.42.0'
 
   # Check for presence of libmysqlclient-dev, default-libmysqlclient-dev, libmariadb-dev, mysql-devel, etc

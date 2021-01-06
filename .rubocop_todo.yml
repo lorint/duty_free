@@ -20,12 +20,6 @@ Layout/ClosingParenthesisIndentation:
   Exclude:
     - 'spec/models/northwind_spec.rb'
 
-# Offense count: 1
-# Cop supports --auto-correct.
-Layout/CommentIndentation:
-  Exclude:
-    - 'lib/duty_free/extensions.rb'
-
 # Offense count: 6
 # Cop supports --auto-correct.
 # Configuration parameters: IndentationWidth.
@@ -64,12 +58,6 @@ Lint/SuppressedException:
     - 'lib/duty_free/extensions.rb'
     - 'lib/duty_free/suggest_template.rb'
 
-# Offense count: 6
-Lint/UselessAssignment:
-  Exclude:
-    - 'lib/duty_free/extensions.rb'
-    - 'spec/models/kitchen/recipe_spec.rb'
-
 # Offense count: 1
 # Configuration parameters: ForbiddenDelimiters.
 # ForbiddenDelimiters: (?-mix:(^|\s)(EO[A-Z]{1}|END)(\s|$))
@@ -78,32 +66,12 @@ Naming/HeredocDelimiterNaming:
     - 'duty_free.gemspec'
 
 # Offense count: 2
-# Configuration parameters: EnforcedStyleForLeadingUnderscores.
-# SupportedStylesForLeadingUnderscores: disallowed, required, optional
-Naming/MemoizedInstanceVariableName:
-  Exclude:
-    - 'lib/duty_free/column.rb'
-
-# Offense count: 2
 # Configuration parameters: MinNameLength, AllowNamesEndingInNumbers, AllowedNames, ForbiddenNames.
 # AllowedNames: at, by, db, id, in, io, ip, of, on, os, pp, to
 Naming/MethodParameterName:
   Exclude:
     - 'lib/duty_free.rb'
     - 'spec/test_app/app/controllers/application_controller.rb'
-
-# Offense count: 2
-# Cop supports --auto-correct.
-Style/CaseLikeIf:
-  Exclude:
-    - 'lib/duty_free/suggest_template.rb'
-    - 'lib/duty_free/util.rb'
-
-# Offense count: 3
-Style/CommentedKeyword:
-  Exclude:
-    - 'lib/duty_free.rb'
-    - 'lib/duty_free/extensions.rb'
 
 # Offense count: 19
 Style/Documentation:

@@ -5,16 +5,16 @@
 An ActiveRecord extension that simplifies importing and exporting of data stored in
 one or more models.  Source and destination can be CSV, XLS, XLSX, ODT, HTML tables,
 or simple Ruby arrays.  What really sets this gem apart from other similar gems is
-the ability to work with related tables as a set.  For example you might have data
+the ability to work across related tables as a set.  For example you might have data
 from one spreadsheet target category, subcategory, and product tables all at once,
-seamlessly importing and exporting that data.
+seamlessly importing and exporting that data as one spreadsheet.
 
 ## Documentation
 
 | Version        | Documentation                                             |
 | -------------- | --------------------------------------------------------- |
 | Unreleased     | https://github.com/lorint/duty_free/blob/master/README.md |
-| 1.0.5          | https://github.com/lorint/duty_free/blob/v1.0.5/README.md |
+| 1.0.8          | https://github.com/lorint/duty_free/blob/v1.0.8/README.md |
 
 ## Table of Contents
 
@@ -26,7 +26,7 @@ seamlessly importing and exporting that data.
   - [1.c. Generating Templates](#1c-generating-templates)
   - [1.d. Exporting Data](#1d-exporting-data)
   - [1.e. Using rails g df_export](#1e-using-rails-g-df-export)
-  - [1.e. Importing Data](#1e-importing-data)
+  - [1.f. Importing Data](#1e-importing-data)
 - [2. More Fancy Exports](#2-limiting-what-is-versioned-and-when)
   - [2.a. Simplify Column Names Using Aliases](#2a-simplify-column-names-using-aliases)
   - [2.b. Filtering the Rows to Export](#2b-filtering-the-rows-to-export)
@@ -107,7 +107,35 @@ to be a .tar.bz2, which can then be installed:
 
 ### 1.c. Generating Templates
 
-If you'd like to examine the default internal template that is generated, then use `#suggest_template` like this:
+In order for Duty Free to understand all the columns across any number of multiple related tables that you'd like to export and import with, a template is used.  This can be set by a constant called `IMPORT_TEMPLATE` in a model, or if that variable is missing, one is auto-generated on-the-fly.  Although the name of this variable might make it sound at first like it's only used for importing, as we have seen from above this template is also used for exporting.  Specifically the `:all` portion defines the `belongs_to` and `has_many` links to follow as various associations get traversed, and as well all the columns to reference in each table are called out.
+
+The easiest way to generate a starter template and place it in a model is to use this Rails generator:
+
+```bash
+bin/rails g duty_free:model
+```
+
+As it runs, you are asked four questions:
+
+1. Which model to use
+1. If you'd like to also include models related by has_many associations.  The default is to
+   only navigate across belongs_to associations, so for instance where you might want to import both Customers and Orders at the same time, then using only belongs_to associations, you would have to start from Orders, which belongs_to Customers.  And if instead you wanted to start from Customers and also include Orders, then you would need to say "Yes" to this choice of navigating across has_many associations, since Customers has_many Orders.
+1. How many hops to traverse.  The system figures out the maximum number that can be navigated, and
+   while using the arrow keys up and down to choose how many hops, a line is updated at the bottom of the list that shows what additional tables would be added in at each layer.
+1. Final yes / no confirmation that you're OK to add this block of code to your model to set the
+   IMPORT_TEMPLATE variable.
+
+You can fully script this operation by using code such as:
+
+```bash
+bin/rails g duty_free:model Customer has_many 2 yes
+```
+
+Note that the four additional parameters indicate the answers to the above four questions.
+
+Regarding the number of hops, in this case where we want to import customer and order data, if your Order model were to have a has_many association to OrderDetail then indicating as we did here to traverse two hops from Customer would first get to Order, and then also include OrderDetail, whereas choosing to go just one hop would end up only traversing from Customer to Order.  Traversing that second hop from Order could also reference a Salesperson model as well, so going a large number of hops with a more complex schema can really start to build out a pretty lengthy IMPORT_TEMPLATE -- even hundreds of lines long if you have perhaps 25 tables and choose to traverse evrything.
+
+To do this creation of a template more programmatically, you can use the #suggest_template method on a model.  In fact, for models that do not yet specify an IMPORT_TEMPLATE, the system does exactly this to auto-generate a default template, such as this one that would be created on-the-fly for a Product model:
 
 ```ruby
 3.0.0 :002 > Product.suggest_template
@@ -127,9 +155,7 @@ IMPORT_TEMPLATE = {
 3.0.0 :002 >
 ```
 
-Note the constant `IMPORT_TEMPLATE`.  Although its name might make it sound at first like it's only used for importing, as we have seen from above this template is also used for exporting.  Specifically the `:all` portion defines the `belongs_to` and `has_many` links to follow, as well as all columns to retrieve from related tables.
-
-To customise things, just take the displayed `IMPORT_TEMPLATE` constant and place it within your `Product` model as a handy starting point.  This will describe to `#df_export` and `#df_import` which columns to utilise.  The `:uniques` and `:required` data indicates which columns can be used during import to identify unique new rows vs existing rows, in order to choose on a row-by-row basis between doing an INSERT vs an UPDATE.  With `:uniques` defined, INSERT vs UPDATE is automatically determined by seeing if any existing row matches against the incoming rows for those specific columns.  If you always want to add new rows then leave :uniques empty, and then doing the same import three times would generate triple the data, leaving you to sort out the duplicates perhaps with ActiveRecord's own :id and :created_at columns.  So generally it's a good idea to populate the :uniques entry with appropriate values to minimise the risk of duplicate data coming in.
+Digging into more of the specifics of all the parts of this IMPORT_TEMPLATE, notice that in a couple different places column names can be included, describing to `#df_export` and `#df_import` which columns to utilise.  The `:uniques` and `:required` are lists of columns that are used during import to identify unique new rows vs existing rows, in order to choose on a row-by-row basis between doing an INSERT vs an UPDATE.  With `:uniques` defined, INSERT vs UPDATE is automatically determined by seeing if any existing row matches against the incoming rows for those specific columns.  If you always want to add new rows then leave :uniques empty, and then doing the same import three times would generate triple the data, leaving you to sort out the duplicates perhaps with ActiveRecord's own :id and :created_at columns.  So generally it's a good idea to populate the :uniques entry with appropriate values to minimise the risk of duplicate data coming in.  In the case of importing users, perhaps a unique you might use would be a person's email address since other things, like their phone number or even their last name, might sometimes change.  Then when re-importing over existing data, an existing user can get updated as long as their email address hasn't changed.
 
 Seeing this simple starting template for `Product` is useful, but perhaps you'd like a more thorough template to work with.  After all, ActiveRecord is a very powerful ORM when used with relational data sets, so as long as you've got appropriate `belongs_to` and `has_many` associations established then `#suggest_template` can use these to work across multiple related tables.  Effectively the schema in your application becomes a graph of nodes which gets traversed.  Let's see how easy it is to create a more rounded out template, this time examining a template for the `Order` model.  Not specifying any extra "hops" brings back a template with this `:all` portion:
 
@@ -139,7 +165,7 @@ all: [:order_date, :required_date, :shipped_date, :ship_via_id, :freight, :ship_
     { employee: [:first_name] }]
 ```
 
-You might want to include more tables, or have the existing ones be more "rounded out" with all their columns.  for these kinds of tricks the `#suggest_template` method accepts two incoming parameters, the number of hops to traverse to related tables, and a boolean for if you would like to also navigate across `has_many` associations in addition to the `belongs_to` associations (which are always traversed).  In the last example, even without specifying a number of hops the related tables `customer` and `employee` were referenced, but each with just one column listed as the system did a best-effort approach to find the most human-readable unique-ish column to utilise for doing a lookup.  These appeared because the `Order` model has belongs_to associations, and thus foreign keys for, these two associated tables.  The template generation logic examined these two destination tables, and not knowing initially what non-metadata column might be considered unique, had just chosen the first string columns available in these, which were `company_code` and `first_name`.  Thankfully these end up being good choices for our data.
+You might want to include more tables, or have the existing ones be more "rounded out" with all their columns.  for these kinds of tricks the `#suggest_template` method accepts two incoming parameters, the number of hops to traverse to related tables, and a boolean for if you would like to also navigate across `has_many` associations in addition to the `belongs_to` associations (which are always traversed).  These are the same options available from the command line when using the Rails generator.  In the last example, even without specifying a number of hops the related tables `customer` and `employee` were referenced, but each with just one column listed as the system did a best-effort approach to find the most human-readable unique-ish column to utilise for doing a lookup.  This is what happens when you choose to traverse 0 hops in the generator.  Columns from these other related tables still appeared because the `Order` model has belongs_to associations, and thus foreign keys for, these two associated tables.  The template generation logic examined these two destination tables, and not knowing initially what non-metadata column might be considered unique, had just chosen the first string columns available in these, which were `company_code` and `first_name`.  Thankfully these end up being good choices for our data.
 
 To go further, we can now specify one additional hop to traverse from that starting table, as well as indicate that we'd like to go across the `has_many` associations as well, by doing:
 

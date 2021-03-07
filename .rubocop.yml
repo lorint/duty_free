@@ -38,7 +38,7 @@ Metrics/BlockLength:
     - spec/models/northwind_spec.rb
 
 Metrics/BlockNesting:
-  Max: 6
+  Max: 7
 
 Metrics/ClassLength:
   Enabled: true

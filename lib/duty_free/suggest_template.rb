@@ -94,13 +94,18 @@ module DutyFree
             assoc_klass = is_polymorphic_hm ? assoc.inverse_of.active_record : assoc.klass
           rescue NameError # For models which cannot be found by name
           end
+          # Skip any PaperTrail audited things
+          next if (assoc_klass <= PaperTrail::Version && assoc.options[:as]) ||
+                  # And any goofy self-referencing aliases
+                  (!is_belongs_to && assoc_klass <= assoc.active_record && assoc.foreign_key.to_s == assoc.active_record.primary_key)
+
           new_assoc =
             if assoc_klass.nil?
               puts "* In the #{this_klass.name} model there's a problem with:  \"#{belongs_to_or_has_many} :#{assoc.name}\"  because there is no \"#{assoc.class_name}\" model."
               nil # Cause this one to be excluded
             elsif is_belongs_to
-              this_belongs_tos << (fk = assoc.foreign_key.to_s)
-              [[[fk], assoc.active_record], assoc_klass]
+              this_belongs_tos << (foreign_key = assoc.foreign_key.to_s)
+              [[[foreign_key], assoc.active_record], assoc_klass]
             else # has_many or has_one
               inverse_foreign_keys = is_polymorphic_hm ? [assoc.type, assoc.foreign_key] : [assoc.inverse_of&.foreign_key&.to_s]
               missing_key_columns = inverse_foreign_keys - assoc_klass.columns.map(&:name)
@@ -112,16 +117,41 @@ module DutyFree
                 if inverse_foreign_keys.length > 1
                   puts "* The #{assoc_klass.name} model is missing #{missing_key_columns.join(' and ')} columns to allow it to support polymorphic inheritance."
                 else
-                  print "* In the #{this_klass.name} model there's a problem with:  \"#{belongs_to_or_has_many} :#{assoc.name}\"."
+                  puts "* In the #{this_klass.name} model there's a problem with:  \"#{belongs_to_or_has_many} :#{assoc.name}\"."
 
-                  if (inverses = _find_belongs_tos(assoc_klass, this_klass, errored_assocs)).empty?
+                  # Most general related parent class in case we're STI
+                  root_class = test_class = this_klass
+                  while (test_class = test_class.superclass) != ActiveRecord::Base
+                    root_class = test_class unless test_class.abstract_class?
+                  end
+                  # If we haven't yet found a match, search for any appropriate unused foreign key that belongs_to the primary class
+                  is_mentioned_consider = false
+                  if (inverses = _find_assocs(:belongs_to, assoc_klass, root_class, assoc.foreign_key, errored_assocs)).empty?
                     if inverse_foreign_keys.first.nil?
-                      puts "  Consider adding \"foreign_key: :#{this_klass.name.underscore}_id\" regarding some column in #{assoc_klass.name} to this #{belongs_to_or_has_many} entry."
+                      # So we can rule them out, find the belongs_tos that already are inverses of any relevant has_many
+                      hm_assocs = _find_assocs(:has_many, this_klass, assoc_klass, nil, errored_assocs)
+                      hm_inverses = hm_assocs.each_with_object([]) do |hm, s|
+                        s << hm.inverse_of if hm.inverse_of
+                        s
+                      end
+                      # Remaining belongs_tos are good candidates to eventually become an inverse_of, and we'll now
+                      # simply suggest that they establish this as being a foreign_key
+                      inverses = _find_assocs(:belongs_to, assoc_klass, root_class, nil, errored_assocs).reject do |bt|
+                        hm_inverses.include?(bt)
+                      end
+                      fks = inverses.map(&:foreign_key)
+                      fks << "#{root_class.name.underscore}_id" if fks.empty? # All that and still no matches?
+                      unless fks.include?(assoc.foreign_key.to_s)
+                        puts "  Consider adding #{fks.map { |fk| "\"foreign_key: :#{fk}\"" }.join(' or ')} (or some other appropriate column from #{assoc_klass.name}) to this #{belongs_to_or_has_many} entry."
+                        is_mentioned_consider = true
+                      end
                     else
                       puts "  (Cannot find foreign key \"#{inverse_foreign_keys.first.inspect}\" in #{assoc_klass.name}.)"
                     end
-                  else
-                    puts "  Consider adding \"#{inverses.map { |x| "inverse_of: :#{x.name}" }.join(' or ')}\" to this entry."
+                  end
+                  if inverses.present?
+                    print is_mentioned_consider ? '  Also consider ' : '  Consider '
+                    puts "adding \"#{inverses.map { |x| "inverse_of: :#{x.name}" }.join(' or ')}\" to this entry."
                   end
                 end
                 nil
@@ -163,7 +193,7 @@ module DutyFree
               else
                 # belongs_to is more involved since there may be multiple foreign keys which point
                 # from the foreign table to this primary one, so exclude all these links.
-                _find_belongs_tos(assoc.first.last, assoc.last, errored_assocs).map do |f_assoc|
+                _find_assocs(:belongs_to, assoc.first.last, assoc.last, nil, errored_assocs).map do |f_assoc|
                   [[f_assoc.foreign_key.to_s], f_assoc.active_record]
                 end
               end
@@ -177,16 +207,28 @@ module DutyFree
     end
 
     # Find belongs_tos for this model to one more more other klasses
-    def self._find_belongs_tos(klass, to_klass, errored_assocs)
-      klass.reflect_on_all_associations.each_with_object([]) do |bt_assoc, s|
-        # .is_a?(ActiveRecord::Reflection::BelongsToReflection)
-        next unless bt_assoc.belongs_to? && !errored_assocs.include?(bt_assoc)
+    def self._find_assocs(macro, klass, to_klass, using_fk = nil, errored_assocs)
+      case macro
+      when :belongs_to
+        klass.reflect_on_all_associations.each_with_object([]) do |bt_assoc, s|
+          next unless bt_assoc.belongs_to? && !errored_assocs.include?(bt_assoc)
 
-        begin
-          s << bt_assoc if !bt_assoc.options[:polymorphic] && bt_assoc.klass == to_klass
-        rescue NameError
-          errored_assocs << bt_assoc
-          puts "* In the #{bt_assoc.active_record.name} model  \"belongs_to :#{bt_assoc.name}\"  could not find a model named #{bt_assoc.class_name}."
+          begin
+            s << bt_assoc if !bt_assoc.options[:polymorphic] && bt_assoc.klass <= to_klass &&
+                             (using_fk.nil? || bt_assoc.foreign_key == using_fk)
+          rescue NameError
+            errored_assocs << bt_assoc
+            puts "* In the #{bt_assoc.active_record.name} model  \"belongs_to :#{bt_assoc.name}\"  could not find a model named #{bt_assoc.class_name}."
+          end
+          s
+        end
+      when :has_many, :has_one
+        klass.reflect_on_all_associations.each_with_object([]) do |hm_assoc, s|
+          next if hm_assoc.macro != macro || errored_assocs.include?(hm_assoc) ||
+                  (hm_assoc.klass <= PaperTrail::Version && hm_assoc.options[:as]) # Skip any PaperTrail associations
+
+          s << hm_assoc if hm_assoc.klass == to_klass && (using_fk.nil? || hm_assoc.foreign_key == using_fk)
+          s
         end
       end
     end
@@ -236,12 +278,8 @@ module DutyFree
           if klass.columns.map(&:name).include?(attrib)
             s << attrib
           else
-            hm_and_bt_names = klass.reflect_on_all_associations.each_with_object([]) do |assoc, names|
-              names << assoc.name.to_s if [:belongs_to, :has_many, :has_one].include?(assoc.macro)
-              names
-            end
-            unless hm_and_bt_names.include?(attrib)
-              puts "* In the #{klass.name} model  \"validates_presence_of :#{attrib}\"  should be removed as it does not refer to any existing column."
+            unless klass.instance_methods.map(&:to_s).include?(attrib)
+              puts "* In the #{klass.name} model  \"validates_presence_of :#{attrib}\"  should be removed as it does not refer to any existing column or relation."
               errored_columns << klass_col
             end
           end

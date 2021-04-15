@@ -1,7 +1,8 @@
 test: &test
   adapter: mysql2
-  encoding: utf8
+  encoding: utf8mb4
   database: duty_free_test
+  collation: utf8mb4_unicode_ci
   pool: 5
   username: duty_free
   password:

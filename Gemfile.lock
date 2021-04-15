@@ -57,6 +57,7 @@ GEM
     method_source (1.0.0)
     mini_portile2 (2.4.0)
     minitest (5.14.2)
+    mysql2 (0.5.3)
     nokogiri (1.10.10)
       mini_portile2 (~> 2.4.0)
     parallel (1.20.1)
@@ -134,6 +135,7 @@ DEPENDENCIES
   ffaker (~> 2.11)
   generator_spec (~> 0.9.4)
   memory_profiler (~> 0.9.14)
+  mysql2 (~> 0.5)
   pg (>= 0.18, < 2.0)
   pry-byebug (~> 3.7.0)
   rake (~> 13.0)
@@ -143,7 +145,7 @@ DEPENDENCIES
   sqlite3 (~> 1.4)
 
 RUBY VERSION
-   ruby 3.0.0p0
+   ruby 2.7.3p183
 
 BUNDLED WITH
    1.17.3

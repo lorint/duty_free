@@ -58,10 +58,7 @@ RSpec.describe 'Employee', type: :model do
 
   def clear_table(model, starting_id = 1)
     model.destroy_all
-    # rubocop:disable Style/ClassEqualityComparison
-    return unless model.count == 0 && ActiveRecord::Base.connection.class.name == 'ActiveRecord::ConnectionAdapters::PostgreSQLAdapter'
-
-    # rubocop:enable Style/ClassEqualityComparison
+    return unless model.count == 0 && ActiveRecord::Base.connection.class.name.end_with?('::PostgreSQLAdapter')
 
     ActiveRecord::Base.connection.execute("SELECT setval('#{model.table_name}_#{model.primary_key}_seq', #{starting_id}, false);")
     # x = ActiveRecord::Base.connection.execute "SELECT c.relname FROM pg_class c WHERE c.relkind = 'S';"
@@ -2508,22 +2505,25 @@ RSpec.describe 'Employee', type: :model do
 
     # Check Imported data
     # -------------------
-    expect(Employee.order(:id).pluck(:first_name)).to eq(
+    emp_ids, employee_names = Employee.order(:id).pluck(:id, :first_name).transpose
+    expect(employee_names).to eq(
       %w[Nancy Andrew Janet Margaret Steven Michael Robert Laura Anne]
     )
 
     # Make sure links to each person's boss got wired up.  Andrew is the top dog.
+    # (And we're using this emp_ids lookup table here because MySQL does not automatically
+    # start with an ID of 1 when INSERTing values -- it picks up where it had left off!)
     expect(Employee.order(:id).pluck(:id, :first_name, :reports_to_id)).to eq(
       [
-        [1, 'Nancy', 2],
-        [2, 'Andrew', nil],
-        [3, 'Janet', 2],
-        [4, 'Margaret', 2],
-        [5, 'Steven', 2],
-        [6, 'Michael', 5],
-        [7, 'Robert', 5],
-        [8, 'Laura', 2],
-        [9, 'Anne', 5]
+        [emp_ids[0], 'Nancy', emp_ids[1]],
+        [emp_ids[1], 'Andrew', nil],
+        [emp_ids[2], 'Janet', emp_ids[1]],
+        [emp_ids[3], 'Margaret', emp_ids[1]],
+        [emp_ids[4], 'Steven', emp_ids[1]],
+        [emp_ids[5], 'Michael', emp_ids[4]],
+        [emp_ids[6], 'Robert', emp_ids[4]],
+        [emp_ids[7], 'Laura', emp_ids[1]],
+        [emp_ids[8], 'Anne', emp_ids[4]]
       ]
     )
 
@@ -2599,13 +2599,12 @@ RSpec.describe 'Employee', type: :model do
     # $334,198.50 or $1,354,458.59
     expect(OrderDetail.sum('quantity * unit_price * 100').to_i).to eq(33_419_850) # 135_445_859
 
-    extract_year = case ActiveRecord::Base.connection.class.name
-                   when 'ActiveRecord::ConnectionAdapters::PostgreSQLAdapter'
+    extract_year = if ActiveRecord::Base.connection.class.name.end_with?('::PostgreSQLAdapter')
                      'EXTRACT(YEAR FROM orders.order_date)::int'
-                   when 'ActiveRecord::ConnectionAdapters::SQLite3Adapter'
+                   elsif ActiveRecord::Base.connection.class.name.end_with?('::SQLite3Adapter')
                      "CAST(strftime('%Y', orders.order_date) AS INTEGER)"
-                     # else
-                     # MySQL, are we?
+                   else # MySQL
+                     'YEAR(orders.order_date)'
                    end
     # Can do .group(1).order(1) when we support AR >= 4.2
     totals_per_year = OrderDetail.joins(:order).group(Arel.sql(extract_year)).order(Arel.sql(extract_year))
@@ -2613,6 +2612,7 @@ RSpec.describe 'Employee', type: :model do
                                    Arel.sql("#{extract_year} AS year"),
                                    Arel.sql('SUM(order_details.quantity * order_details.unit_price * 100) AS total')
                                  )
+
     expect(totals_per_year.map { |x| x.map(&:to_i) }).to eq([
       # for the subset of data   for the entire set of data, all orders
       [1996, 22_629_850], #      [1996, 22_629_850], # $226,298.50

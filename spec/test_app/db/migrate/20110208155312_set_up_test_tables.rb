@@ -249,6 +249,8 @@ class SetUpTestTables < (
       t.references :recipe
     end
 
+    # Northwind tables
+    is_mysql = ActiveRecord::Base.connection.class.name.end_with?('::Mysql2Adapter')
     # Self-referencing table
     create_table :employees do |t|
       t.string :first_name
@@ -285,7 +287,11 @@ class SetUpTestTables < (
       t.date :required_date
       t.date :shipped_date
       t.references :ship_via, index: true
-      t.decimal :freight
+      if is_mysql
+        t.decimal :freight, precision: 10, scale: 2
+      else
+        t.decimal :freight
+      end
       t.string :ship_name
       t.string :ship_address
       t.string :ship_city
@@ -303,7 +309,11 @@ class SetUpTestTables < (
     create_table :products do |t|
       t.string :product_name
       t.string :quantity_per_unit
-      t.decimal :unit_price
+      if is_mysql
+        t.decimal :unit_price, precision: 10, scale: 2
+      else
+        t.decimal :unit_price
+      end
       t.integer :units_in_stock
       t.integer :units_on_order
       t.integer :reorder_level
@@ -312,9 +322,15 @@ class SetUpTestTables < (
       t.references :category, index: true
     end
     create_table :order_details do |t|
-      t.decimal :unit_price
-      t.integer :quantity
-      t.decimal :discount
+      if is_mysql
+        t.decimal :unit_price, precision: 10, scale: 2
+        t.integer :quantity
+        t.decimal :discount, precision: 10, scale: 2
+      else
+        t.decimal :unit_price
+        t.integer :quantity
+        t.decimal :discount
+      end
       t.references :order, index: true
       t.references :product, index: true
     end

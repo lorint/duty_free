@@ -42,8 +42,7 @@ Gem::Specification.new do |s|
 
   # Check for presence of libmysqlclient-dev, default-libmysqlclient-dev, libmariadb-dev, mysql-devel, etc
   require 'mkmf'
-  Bundler::Dsl.instance_variable_set(:@_has_mysql, (has_mysql = have_library('mysqlclient')))
-  s.add_development_dependency 'mysql2', '~> 0.5' if has_mysql
+  s.add_development_dependency 'mysql2', '~> 0.5' if have_library('mysqlclient')
   s.add_development_dependency 'pg', '>= 0.18', '< 2.0'
   s.add_development_dependency 'sqlite3', '~> 1.4'
 end

@@ -10,7 +10,7 @@
 # > https://github.com/thoughtbot/appraisal
 
 appraise 'ar-3.0' do
-  gem 'activerecord', '~> 3.0.20'
+  gem 'activerecord', '~> 3.0'
 
   gem 'database_cleaner', '~> 1.6'
   gem 'ffaker', '~> 2.11'
@@ -26,7 +26,7 @@ appraise 'ar-3.0' do
 end
 
 appraise 'ar-3.1' do
-  gem 'activerecord', '~> 3.1.12'
+  gem 'activerecord', '~> 3.1'
 
   gem 'database_cleaner', '~> 1.6'
   gem 'ffaker', '~> 2.11'
@@ -42,7 +42,7 @@ appraise 'ar-3.1' do
 end
 
 appraise 'ar-3.2' do
-  gem 'activerecord', '~> 3.2.22'
+  gem 'activerecord', '~> 3.2'
 
   gem 'database_cleaner', '~> 1.6'
   gem 'ffaker', '~> 2.11'
@@ -58,7 +58,7 @@ appraise 'ar-3.2' do
 end
 
 appraise 'ar-4.0' do
-  gem 'activerecord', '~> 4.0.13'
+  gem 'activerecord', '~> 4.0'
 
   gem 'database_cleaner', '~> 1.6'
   gem 'ffaker', '~> 2.11'
@@ -73,7 +73,7 @@ appraise 'ar-4.0' do
 end
 
 appraise 'ar-4.2' do
-  gem 'activerecord', '~> 4.2.11.3'
+  gem 'activerecord', '~> 4.2'
 
   gem 'database_cleaner', '~> 1.6'
   gem 'ffaker', '~> 2.11'
@@ -88,23 +88,23 @@ appraise 'ar-4.2' do
 end
 
 appraise 'ar-5.0' do
-  gem 'activerecord', '~> 5.0.7.2'
+  gem 'activerecord', '~> 5.0'
 
   gem 'sqlite3', '< 1.4'
 end
 
 appraise 'ar-5.1' do
-  gem 'activerecord', '~> 5.1.7'
+  gem 'activerecord', '~> 5.1'
 end
 
 appraise 'ar-5.2' do
-  gem 'activerecord', '~> 5.2.4.4'
+  gem 'activerecord', '~> 5.2'
 end
 
 appraise 'ar-6.0' do
-  gem 'activerecord', '~> 6.0.3.4'
+  gem 'activerecord', '~> 6.0'
 end
 
 appraise 'ar-6.1' do
-  gem 'activerecord', '~> 6.1.0'
+  gem 'activerecord', '~> 6.1'
 end

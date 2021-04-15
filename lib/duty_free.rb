@@ -322,6 +322,7 @@ ActiveSupport.on_load(:active_record) do
   # First part of arel_table_type stuff:
   # ------------------------------------
   # (more found below)
+  # was:  ActiveRecord.version >= ::Gem::Version.new('3.2') &&
   if ActiveRecord.version < ::Gem::Version.new('5.0')
     # Used by Util#_arel_table_type
     module ActiveRecord

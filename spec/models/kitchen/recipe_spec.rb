@@ -148,10 +148,10 @@ module Kitchen
         # work so data can more effectively be migrated away from historic apps.  But Import?  Not
         # as import-ant for us! :)
         unless ActiveRecord.version < ::Gem::Version.new('4.0')
-          expect(Recipe.joins(:ingredient_recipes).group(:name).order(:id).pluck(:name, Arel.sql('COUNT(*)'))).to eq(
+          expect(Recipe.joins(:ingredient_recipes).group(:name).order(:name).pluck(:name, Arel.sql('COUNT(*)'))).to eq(
             [
-              ['Spaghetti Barilla with Squid ink', 8],
-              ['Pasta with Shrimp and San Marzano Tomatoes', 18]
+              ['Pasta with Shrimp and San Marzano Tomatoes', 18],
+              ['Spaghetti Barilla with Squid ink', 8]
             ]
           )
         end

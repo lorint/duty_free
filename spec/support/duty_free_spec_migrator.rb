@@ -7,7 +7,7 @@ class DutyFreeSpecMigrator
 
   def migrate
     if ::ActiveRecord.version >= ::Gem::Version.new('6.0')
-      ::ActiveRecord::MigrationContext.new(@migrations_path, ActiveRecord::SchemaMigration).migrate
+      ::ActiveRecord::MigrationContext.new(@migrations_path, ::ActiveRecord::SchemaMigration).migrate
     elsif ::ActiveRecord.version >= ::Gem::Version.new('5.2.0.rc1')
       ::ActiveRecord::MigrationContext.new(@migrations_path).migrate
     else

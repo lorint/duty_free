@@ -63,8 +63,8 @@ RSpec::Core::RakeTask.new(:spec) do |t|
   t.verbose = false
 end
 
-require 'rubocop/rake_task'
-RuboCop::RakeTask.new
+# require 'rubocop/rake_task'
+# RuboCop::RakeTask.new
 
 desc 'Default: run all available test suites'
-task default: %i[rubocop prepare spec]
+task default: %i[prepare spec]

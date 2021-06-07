@@ -30,8 +30,8 @@ module DutyFree
 
       # Generate a list of viable models that can be chosen
       longest_length = 0
-      model_info = Hash.new { |h, k| h[k] = Hash.new }
-      tableless = Hash.new { |h, k| h[k] = Array.new }
+      model_info = Hash.new { |h, k| h[k] = {} }
+      tableless = Hash.new { |h, k| h[k] = [] }
       models = ActiveRecord::Base.descendants.reject do |m|
         trouble = if m.abstract_class?
                     true
@@ -41,14 +41,15 @@ module DutyFree
                   else
                     this_f_keys = (model_info[m][:f_keys] = m.reflect_on_all_associations.select { |a| a.macro == :belongs_to }) || []
                     column_names = (model_info[m][:column_names] = m.columns.map(&:name) - [m.primary_key, 'created_at', 'updated_at', 'deleted_at'] - this_f_keys.map(&:foreign_key))
-                    if column_names.empty?
-                      fk_message = ", although #{this_f_keys.length.to_s} foreign keys" if this_f_keys && !this_f_keys.empty?
-                      trouble = " (No columns#{fk_message})"
+                    if column_names.empty? && this_f_keys && !this_f_keys.empty?
+                      fk_message = ", although #{this_f_keys.length} foreign keys"
+                      " (No columns#{fk_message})"
                     end
                   end
         # puts "#{m.name}#{trouble}" if trouble&.is_a?(String)
         trouble
-      end.sort do |a, b| # Sort first to separate namespaced stuff from the rest, then alphabetically
+      end
+      models.sort! do |a, b| # Sort first to separate namespaced stuff from the rest, then alphabetically
         is_a_namespaced = a.name.include?('::')
         is_b_namespaced = b.name.include?('::')
         if is_a_namespaced && !is_b_namespaced
@@ -58,7 +59,8 @@ module DutyFree
         else
           a.name <=> b.name
         end
-      end.each do |m| # Find longest name in the list for future use to show lists on the right side of the screen
+      end
+      models.each do |m| # Find longest name in the list for future use to show lists on the right side of the screen
         # Strangely this can't be inlined since it assigns to "len"
         if longest_length < (len = m.name.length)
           longest_length = len
@@ -82,15 +84,17 @@ module DutyFree
       # %%% Find out how many hops at most we can go from this model
       max_hm_nav = starting.suggest_template(-1, true, false)
       max_bt_nav = starting.suggest_template(-1, false, false)
-      hops_with_hm, num_hm_hops_tables = num_hops([[starting, max_hm_nav[:all]]])
-      hops, num_hops_tables = num_hops([[starting, max_bt_nav[:all]]])
+      hops_with_hm, num_hm_hops_tables = calc_num_hops([[starting, max_hm_nav[:all]]], models)
+      hops, num_hops_tables = calc_num_hops([[starting, max_bt_nav[:all]]], models)
       print "\b" * 11
       unless hops_with_hm.length == hops.length
         starting_name = starting.name
         unless (is_hm = ARGV[1]&.downcase)
           puts "Navigate from #{starting_name} using:\n#{'=' * (21 + starting_name.length)}"
-          is_hm = gets_list(["Only belongs_to (max of #{hops.length} hops and #{num_hops_tables} tables)",
-            "has_many as well as belongs_to (max of #{hops_with_hm.length} hops and #{num_hm_hops_tables} tables)"])
+          is_hm = gets_list(
+            ["Only belongs_to (max of #{hops.length} hops and #{num_hops_tables} tables)",
+             "has_many as well as belongs_to (max of #{hops_with_hm.length} hops and #{num_hm_hops_tables} tables)"]
+          )
         end
         is_hm = is_hm.start_with?('has_many') || is_hm[0] == 'y'
         hops = hops_with_hm if is_hm
@@ -130,12 +134,12 @@ module DutyFree
       $stdout = original_stdout
       filename = nil
       output.rewind
-      lines = output.each_line.inject([]) do |s, line|
+      lines = output.each_line.each_with_object([]) do |line, s|
         if line == "\n"
           # Do nothing
         elsif filename
           s << line
-        else
+        elsif line.start_with?('# Place the following into ')
           filename = line[27..-1]&.split(':')&.first
         end
         s
@@ -146,8 +150,9 @@ module DutyFree
       starting_name = starting.name.demodulize
       loop do
         break if model_file.eof?
+
         line_parts = model_file.readline.strip.gsub(/ +/, ' ').split(' ')
-        if line_parts.first == 'class' && line_parts[1] == starting_name || line_parts[1].end_with?("::#{starting_name}")
+        if line_parts.first == 'class' && line_parts[1] && (line_parts[1] == starting_name || line_parts[1].end_with?("::#{starting_name}"))
           insert_at = model_file.pos
           break
         end
@@ -160,28 +165,27 @@ module DutyFree
       # If there already is just one, we will comment it out if needs be before adding a fresh one.
       loop do
         break if model_file.eof?
+
         line_parts = (line = model_file.readline).strip.split(/[\s=]+/)
         indentation ||= line[0...(/\S/ =~ line)]
-        if line_parts[-2..-1] == ['IMPORT_TEMPLATE', '{']
+        case line_parts[-2..-1]
+        when ['IMPORT_TEMPLATE', '{']
           import_template_blocks << import_template_block if import_template_block
           import_template_block = [model_file.pos - line.length, nil, line.strip[0] == '#', []]
-        elsif line_parts[-2..-1] == ['#', '------------------------------------------']
-          if import_template_block # && import_template_block[1].nil?
-            import_template_block[1] = model_file.pos
-          end
+        when ['#', '------------------------------------------']
+          import_template_block[1] = model_file.pos if import_template_block # && import_template_block[1].nil?
         end
-        if import_template_block
-          # Collect all the lines of any existing block
-          import_template_block[3] << line
-          # Cap this one if it's done
-          if import_template_block[1]
-            import_template_blocks << import_template_block
-            import_template_block = nil
-          end
+        next unless import_template_block
+
+        # Collect all the lines of any existing block
+        import_template_block[3] << line
+        # Cap this one if it's done
+        if import_template_block[1]
+          import_template_blocks << import_template_block
+          import_template_block = nil
         end
       end
       import_template_blocks << import_template_block if import_template_block
-      rest_of_file = nil
       comments = nil
       is_add_cr = nil
       if import_template_blocks.length > 1
@@ -200,8 +204,8 @@ module DutyFree
           indentation = import_template_block[3].first[0...(/\S/ =~ import_template_block[3].first)]
           comments = import_template_block[3].map { |l| "#{l[0...indentation.length]}# #{l[indentation.length..-1]}" }
         end
-      # else # Must be no IMPORT_TEMPLATE block yet
-      #   insert_at = model_file.pos
+        # else # Must be no IMPORT_TEMPLATE block yet
+        #   insert_at = model_file.pos
       end
       if insert_at.nil?
         puts "Please edit #{filename} manually and add this code:\n\n#{lines.join}"
@@ -211,19 +215,22 @@ module DutyFree
                 is_hm ? 'has_many' : 'no',
                 num_hops]
         args << 'yes' if is_good
-        args = args.inject(+'') { |s, v| s << " #{v}"; s }
+        args = args.each_with_object(+'') do |v, s|
+          s << " #{v}"
+          s
+        end
         lines.unshift("# Added #{DateTime.now.strftime('%b %d, %Y %I:%M%P')} by running `bin/rails g duty_free:model#{args}`\n")
         # add a new one afterwards
         print is_good ? 'Will' : 'OK to'
         print "#{" comment #{comments.length} existing lines and" if comments} add #{lines.length} new lines to #{filename}"
         puts is_good ? '.' : '?'
-        if is_good || gets_list(['Yes', 'No']) == 'Yes'
+        if is_good || gets_list(%w[Yes No]) == 'Yes'
           # Store rest of file
           model_file.pos = insert_at
-          rest_of_file = model_file.read()
+          rest_of_file = model_file.read
           if comments
             model_file.pos = import_template_block[0]
-            model_file.write(comments.join + "\n")
+            model_file.write("#{comments.join}\n")
             puts "Commented #{comments.length} existing lines"
           else
             model_file.pos = insert_at
@@ -238,13 +245,13 @@ module DutyFree
 
   private
 
-    # def num_hops(all, num = 0)
+    # def calc_num_hops(all, num = 0)
     #   max_num = num
     #   all.each do |item|
     #     if item.is_a?(Hash)
     #       item.each do |k, v|
     #         # puts "#{k} - #{num}"
-    #         this_num = num_hops(item[k], num + 1)
+    #         this_num = calc_num_hops(item[k], num + 1)
     #         max_num = this_num if this_num > max_num
     #       end
     #     end
@@ -253,7 +260,7 @@ module DutyFree
     # end
 
     # Breadth first approach
-    def num_hops(this_layer)
+    def calc_num_hops(this_layer, models = nil)
       seen_it = {}
       layers = []
       loop do
@@ -263,12 +270,25 @@ module DutyFree
           klass = grouping.first
           # binding.pry #unless klass.is_a?(Class)
           grouping.last.each do |item|
-            if item.is_a?(Hash) && !seen_it.include?([klass, (k, v = item.first).first])
-              seen_it[[klass, k]] = nil
-              this_keys << [klass, k]
-              this_klass = klass.reflect_on_association(k).klass
-              next_layer << [this_klass, v.select { |ip| ip.is_a?(Hash) }]
+            next unless item.is_a?(Hash) && !seen_it.include?([klass, (k, v = item.first).first])
+
+            seen_it[[klass, k]] = nil
+            this_keys << [klass, k]
+            this_klass = klass.reflect_on_association(k)&.klass
+            if this_klass.nil? # Perhaps it's polymorphic
+              polymorphics = klass.reflect_on_all_associations.each_with_object([]) do |r, s|
+                prefix = "#{r.name}_"
+                if r.polymorphic? && k.to_s.start_with?(prefix)
+                  suffix = k.to_s[prefix.length..-1]
+                  possible_klass = models.find { |m| m.name.underscore == suffix }
+                  s << [suffix, possible_klass] if possible_klass
+                end
+                s
+              end
+              # binding.pry if polymorphics.length != 1
+              this_klass = polymorphics.first&.last
             end
+            next_layer << [this_klass, v.select { |ip| ip.is_a?(Hash) }] if this_klass
           end
         end
         layers << this_keys unless this_keys.empty?

@@ -7,7 +7,6 @@ module DutyFree
       # Helpful suggestions to get started creating a template
       # Pass in -1 for hops if you want to traverse all possible links
       def suggest_template(hops = 0, do_has_many = false, show_output = true, this_klass = self)
-        ::DutyFree.instance_variable_set(:@errored_assocs, [])
         ::DutyFree.instance_variable_set(:@errored_columns, [])
         uniques, _required = ::DutyFree::SuggestTemplate._suggest_unique_column(this_klass, nil, '')
         template, required = ::DutyFree::SuggestTemplate._suggest_template(hops, do_has_many, this_klass)
@@ -17,7 +16,6 @@ module DutyFree
           all: template,
           as: {}
         }
-        # puts "Errors: #{::DutyFree.instance_variable_get(:@errored_assocs).inspect}"
 
         if show_output
           path = this_klass.name.split('::').map(&:underscore).join('/')
@@ -32,183 +30,207 @@ module DutyFree
       end
     end
 
-    def self._suggest_template(hops, do_has_many, this_klass, poison_links = [], path = '')
-      errored_assocs = ::DutyFree.instance_variable_get(:@errored_assocs)
-      this_primary_key = Array(this_klass.primary_key)
-      # Find all associations, and track all belongs_tos
-      this_belongs_tos = []
-      assocs = {}
-      this_klass.reflect_on_all_associations.each do |assoc|
-        # PolymorphicReflection AggregateReflection RuntimeReflection
-        is_belongs_to = assoc.belongs_to?
-        # Figure out if it's belongs_to, has_many, or has_one
-        belongs_to_or_has_many =
-          if is_belongs_to
-            'belongs_to'
-          elsif (is_habtm = assoc.macro == :has_and_belongs_to_many)
-            'has_and_belongs_to_many'
-          elsif assoc.macro == :has_many
-            'has_many'
-          else
-            'has_one'
-          end
-        # Always process belongs_to, and also process has_one and has_many if do_has_many is chosen.
-        # Skip any HMT or HABTM. (Maybe break out HABTM into a combo HM and BT in the future.)
-        if is_habtm
-          puts "* In the #{this_klass.name} model there's a problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because join table \"#{assoc.join_table}\" does not exist.  You can create it with a create_join_table migration." unless ActiveRecord::Base.connection.table_exists?(assoc.join_table)
-          # %%% Search for other associative candidates to use instead of this HABTM contraption
-          puts "* In the #{this_klass.name} model there's a problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because it includes \"through: #{assoc.options[:through].inspect}\" which is pointless and should be removed." if assoc.options.include?(:through)
-        end
-        if (is_through = assoc.is_a?(ActiveRecord::Reflection::ThroughReflection)) && assoc.options.include?(:as)
-          puts "* In the #{this_klass.name} model there's a problem with:  \"has_many :#{assoc.name} through: #{assoc.options[:through].inspect}\"  because it also includes \"as: #{assoc.options[:as].inspect}\", so please choose either for this line to be a \"has_many :#{assoc.name} through:\" or to be a polymorphic \"has_many :#{assoc.name} as:\".  It can't be both."
-        end
-        next if is_through || is_habtm || (!is_belongs_to && !do_has_many) || errored_assocs.include?(assoc)
-
-        if is_belongs_to && assoc.options[:polymorphic] # Polymorphic belongs_to?
-          # Load all models
-          # %%% Note that this works in Rails 5.x, but may not work in Rails 6.0 and later, which uses the Zeitwerk loader by default:
-          Rails.configuration.eager_load_namespaces.select { |ns| ns < Rails::Application }.each(&:eager_load!)
-          # Find all current possible polymorphic relations
-          ActiveRecord::Base.descendants.each do |model|
-            # Skip auto-generated HABTM_DestinationModel models
-            next if model.respond_to?(:table_name_resolver) &&
-                    model.name.start_with?('HABTM_') &&
-                    model.table_name_resolver.is_a?(
-                      ActiveRecord::Associations::Builder::HasAndBelongsToMany::JoinTableResolver::KnownClass
-                    )
-
-            # Find applicable polymorphic has_many associations from each real model
-            model.reflect_on_all_associations.each do |poly_assoc|
-              next unless [:has_many, :has_one].include?(poly_assoc.macro) && poly_assoc.inverse_of == assoc
-
-              this_belongs_tos += (fkeys = [poly_assoc.type, poly_assoc.foreign_key])
-              assocs["#{assoc.name}_#{poly_assoc.active_record.name.underscore}".to_sym] = [[fkeys, assoc.active_record], poly_assoc.active_record]
-            end
-          end
-        else
-          # Is it a polymorphic has_many, which is defined using as: :somethingable ?
-          is_polymorphic_hm = assoc.inverse_of&.options&.fetch(:polymorphic) { nil }
-          begin
-            # Standard has_one, or has_many, and belongs_to uses assoc.klass.
-            # Also polymorphic belongs_to uses assoc.klass.
-            assoc_klass = is_polymorphic_hm ? assoc.inverse_of.active_record : assoc.klass
-          rescue NameError # For models which cannot be found by name
-          end
-          # Skip any PaperTrail audited things
-          next if (Object.const_defined?('PaperTrail::Version') && assoc_klass <= PaperTrail::Version && assoc.options[:as]) ||
-                  # And any goofy self-referencing aliases
-                  (!is_belongs_to && assoc_klass <= assoc.active_record && assoc.foreign_key.to_s == assoc.active_record.primary_key)
-
-          new_assoc =
-            if assoc_klass.nil?
-              puts "* In the #{this_klass.name} model there's a problem with:  \"#{belongs_to_or_has_many} :#{assoc.name}\"  because there is no \"#{assoc.class_name}\" model."
-              nil # Cause this one to be excluded
-            elsif is_belongs_to
-              this_belongs_tos << (foreign_key = assoc.foreign_key.to_s)
-              [[[foreign_key], assoc.active_record], assoc_klass]
-            else # has_many or has_one
-              inverse_foreign_keys = is_polymorphic_hm ? [assoc.type, assoc.foreign_key] : [assoc.inverse_of&.foreign_key&.to_s]
-              missing_key_columns = inverse_foreign_keys - assoc_klass.columns.map(&:name)
-              if missing_key_columns.empty?
-                puts "* Missing inverse foreign key for #{this_klass.name} #{belongs_to_or_has_many} :#{assoc.name}" if inverse_foreign_keys.first.nil?
-                # puts "Has columns #{inverse_foreign_keys.inspect}"
-                [[inverse_foreign_keys, assoc_klass], assoc_klass]
+    def self._suggest_template(hops, do_has_many, this_klass)
+      poison_links = []
+      # "path" starts with ''
+      # "template" starts with [], and we hold on to the root piece here so we can return it after
+      # going through all the layers, at which point it will have grown to include the entire hierarchy.
+      this_layer = [[do_has_many, this_klass, '', (whole_template = [])]]
+      requireds = []
+      errored_assocs = []
+      loop do
+        next_layer = []
+        this_layer.each do |klass_item|
+          do_has_many, this_klass, path, template = klass_item
+          this_primary_key = Array(this_klass.primary_key)
+          # Find all associations, and track all belongs_tos
+          this_belongs_tos = []
+          assocs = {}
+          this_klass.reflect_on_all_associations.each do |assoc|
+            # PolymorphicReflection AggregateReflection RuntimeReflection
+            is_belongs_to = assoc.belongs_to?
+            # Figure out if it's belongs_to, has_many, or has_one
+            belongs_to_or_has_many =
+              if is_belongs_to
+                'belongs_to'
+              elsif (is_habtm = assoc.macro == :has_and_belongs_to_many)
+                'has_and_belongs_to_many'
+              elsif assoc.macro == :has_many
+                'has_many'
               else
-                if inverse_foreign_keys.length > 1
-                  puts "* The #{assoc_klass.name} model is missing #{missing_key_columns.join(' and ')} columns to allow it to support polymorphic inheritance."
-                else
-                  puts "* In the #{this_klass.name} model there's a problem with:  \"#{belongs_to_or_has_many} :#{assoc.name}\"."
+                'has_one'
+              end
+            # Always process belongs_to, and also process has_one and has_many if do_has_many is chosen.
+            # Skip any HMT or HABTM. (Maybe break out HABTM into a combo HM and BT in the future.)
+            if is_habtm
+              puts "* In the #{this_klass.name} model there's a problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because join table \"#{assoc.join_table}\" does not exist.  You can create it with a create_join_table migration." unless ActiveRecord::Base.connection.table_exists?(assoc.join_table)
+              # %%% Search for other associative candidates to use instead of this HABTM contraption
+              puts "* In the #{this_klass.name} model there's a problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because it includes \"through: #{assoc.options[:through].inspect}\" which is pointless and should be removed." if assoc.options.include?(:through)
+            end
+            if (is_through = assoc.is_a?(ActiveRecord::Reflection::ThroughReflection)) && assoc.options.include?(:as)
+              puts "* In the #{this_klass.name} model there's a problem with:  \"has_many :#{assoc.name} through: #{assoc.options[:through].inspect}\"  because it also includes \"as: #{assoc.options[:as].inspect}\", " \
+                   "so please choose either for this line to be a \"has_many :#{assoc.name} through:\" or to be a polymorphic \"has_many :#{assoc.name} as:\".  It can't be both."
+            end
+            next if is_through || is_habtm || (!is_belongs_to && !do_has_many) || errored_assocs.include?(assoc)
 
-                  # Most general related parent class in case we're STI
-                  root_class = test_class = this_klass
-                  while (test_class = test_class.superclass) != ActiveRecord::Base
-                    root_class = test_class unless test_class.abstract_class?
-                  end
-                  # If we haven't yet found a match, search for any appropriate unused foreign key that belongs_to the primary class
-                  is_mentioned_consider = false
-                  if (inverses = _find_assocs(:belongs_to, assoc_klass, root_class, assoc.foreign_key, errored_assocs)).empty?
-                    if inverse_foreign_keys.first.nil?
-                      # So we can rule them out, find the belongs_tos that already are inverses of any other relevant has_many
-                      hm_assocs = _find_assocs(:has_many, this_klass, assoc_klass, nil, errored_assocs)
-                      hm_inverses = hm_assocs.each_with_object([]) do |hm, s|
-                        s << hm.inverse_of if hm.inverse_of
-                        s
-                      end
-                      # Remaining belongs_tos are also good candidates to become an inverse_of, so we'll suggest
-                      # both to establish a :foreign_key and also duing the inverses.present? check an :inverse_of.
-                      inverses = _find_assocs(:belongs_to, assoc_klass, root_class, nil, errored_assocs).reject do |bt|
-                        hm_inverses.include?(bt)
-                      end
-                      fks = inverses.map(&:foreign_key)
-                      fks << "#{root_class.name.underscore}_id" if fks.empty? # All that and still no matches?
-                      unless fks.include?(assoc.foreign_key.to_s)
-                        puts "  Consider adding #{fks.map { |fk| "\"foreign_key: :#{fk}\"" }.join(' or ')} (or some other appropriate column from #{assoc_klass.name}) to this #{belongs_to_or_has_many} entry."
-                        is_mentioned_consider = true
-                      end
+            if is_belongs_to && assoc.options[:polymorphic] # Polymorphic belongs_to?
+              # Load all models
+              # %%% Note that this works in Rails 5.x, but may not work in Rails 6.0 and later, which uses the Zeitwerk loader by default:
+              # puts "Poly: #{assoc.name}"
+              Rails.configuration.eager_load_namespaces.select { |ns| ns < Rails::Application }.each(&:eager_load!)
+              # Find all current possible polymorphic relations
+              ActiveRecord::Base.descendants.each do |model|
+                # Skip auto-generated HABTM_DestinationModel models
+                next if model.respond_to?(:table_name_resolver) &&
+                        model.name.start_with?('HABTM_') &&
+                        model.table_name_resolver.is_a?(
+                          ActiveRecord::Associations::Builder::HasAndBelongsToMany::JoinTableResolver::KnownClass
+                        )
+
+                # Find applicable polymorphic has_many associations from each real model
+                model.reflect_on_all_associations.each do |poly_assoc|
+                  next unless [:has_many, :has_one].include?(poly_assoc.macro) && poly_assoc.inverse_of == assoc
+
+                  this_belongs_tos += (fkeys = [poly_assoc.type, poly_assoc.foreign_key])
+                  assocs["#{assoc.name}_#{poly_assoc.active_record.name.underscore}".to_sym] = [[fkeys, assoc.active_record], poly_assoc.active_record]
+                end
+              end
+            else
+              # Is it a polymorphic has_many, which is defined using as: :somethingable ?
+              is_polymorphic_hm = assoc.inverse_of&.options&.fetch(:polymorphic) { nil }
+              begin
+                # Standard has_one, or has_many, and belongs_to uses assoc.klass.
+                # Also polymorphic belongs_to uses assoc.klass.
+                assoc_klass = is_polymorphic_hm ? assoc.inverse_of.active_record : assoc.klass
+              rescue NameError # For models which cannot be found by name
+              end
+              # Skip any PaperTrail audited things
+              next if (Object.const_defined?('PaperTrail::Version') && assoc_klass <= PaperTrail::Version && assoc.options[:as]) ||
+                      # And any goofy self-referencing aliases
+                      (!is_belongs_to && assoc_klass <= assoc.active_record && assoc.foreign_key.to_s == assoc.active_record.primary_key)
+
+              new_assoc =
+                if assoc_klass.nil?
+                  puts "* In the #{this_klass.name} model there's a problem with:  \"#{belongs_to_or_has_many} :#{assoc.name}\"  because there is no \"#{assoc.class_name}\" model."
+                  nil # Cause this one to be excluded
+                elsif is_belongs_to
+                  this_belongs_tos << (foreign_key = assoc.foreign_key.to_s)
+                  [[[foreign_key], assoc.active_record], assoc_klass]
+                else # has_many or has_one
+                  inverse_foreign_keys = is_polymorphic_hm ? [assoc.type, assoc.foreign_key] : [assoc.inverse_of&.foreign_key&.to_s]
+                  missing_key_columns = inverse_foreign_keys - assoc_klass.columns.map(&:name)
+                  if missing_key_columns.empty?
+                    puts "* Missing inverse foreign key for #{this_klass.name} #{belongs_to_or_has_many} :#{assoc.name}" if inverse_foreign_keys.first.nil?
+                    # puts "Has columns #{inverse_foreign_keys.inspect}"
+                    [[inverse_foreign_keys, assoc_klass], assoc_klass]
+                  else
+                    if inverse_foreign_keys.length > 1
+                      puts "* The #{assoc_klass.name} model is missing #{missing_key_columns.join(' and ')} columns to allow it to support polymorphic inheritance."
                     else
-                      puts "  (Cannot find foreign key \"#{inverse_foreign_keys.first.inspect}\" in #{assoc_klass.name}.)"
+                      puts "* In the #{this_klass.name} model there's a problem with:  \"#{belongs_to_or_has_many} :#{assoc.name}\"."
+
+                      # Most general related parent class in case we're STI
+                      root_class = test_class = this_klass
+                      while (test_class = test_class.superclass) != ActiveRecord::Base
+                        root_class = test_class unless test_class.abstract_class?
+                      end
+                      # If we haven't yet found a match, search for any appropriate unused foreign key that belongs_to the primary class
+                      is_mentioned_consider = false
+                      if (inverses = _find_assocs(:belongs_to, assoc_klass, root_class, errored_assocs, assoc.foreign_key)).empty?
+                        if inverse_foreign_keys.first.nil?
+                          # So we can rule them out, find the belongs_tos that already are inverses of any other relevant has_many
+                          hm_assocs = _find_assocs(:has_many, this_klass, assoc_klass, errored_assocs)
+                          hm_inverses = hm_assocs.each_with_object([]) do |hm, s|
+                            s << hm.inverse_of if hm.inverse_of
+                            s
+                          end
+                          # Remaining belongs_tos are also good candidates to become an inverse_of, so we'll suggest
+                          # both to establish a :foreign_key and also duing the inverses.present? check an :inverse_of.
+                          inverses = _find_assocs(:belongs_to, assoc_klass, root_class, errored_assocs).reject do |bt|
+                            hm_inverses.include?(bt)
+                          end
+                          fks = inverses.map(&:foreign_key)
+                          fks << "#{root_class.name.underscore}_id" if fks.empty? # All that and still no matches?
+                          unless fks.include?(assoc.foreign_key.to_s)
+                            puts "  Consider adding #{fks.map { |fk| "\"foreign_key: :#{fk}\"" }.join(' or ')} (or some other appropriate column from #{assoc_klass.name}) to this #{belongs_to_or_has_many} entry."
+                            is_mentioned_consider = true
+                          end
+                        else
+                          puts "  (Cannot find foreign key \"#{inverse_foreign_keys.first.inspect}\" in #{assoc_klass.name}.)"
+                        end
+                      end
+                      if inverses.present?
+                        print is_mentioned_consider ? '  Also consider ' : '  Consider '
+                        puts "adding \"#{inverses.map { |x| "inverse_of: :#{x.name}" }.join(' or ')}\" to this entry."
+                      end
                     end
-                  end
-                  if inverses.present?
-                    print is_mentioned_consider ? '  Also consider ' : '  Consider '
-                    puts "adding \"#{inverses.map { |x| "inverse_of: :#{x.name}" }.join(' or ')}\" to this entry."
+                    nil
                   end
                 end
-                nil
+              if new_assoc.nil?
+                errored_assocs << assoc
+              else
+                assocs[assoc.name] = new_assoc
               end
             end
-          if new_assoc.nil?
-            errored_assocs << assoc
-          else
-            assocs[assoc.name] = new_assoc
+          end
+
+          # Include all columns except for the primary key, any foreign keys, and excluded_columns
+          # %%% add EXCLUDED_ALL_COLUMNS || ...
+          excluded_columns = %w[created_at updated_at deleted_at]
+          (this_klass.columns.map(&:name) - this_primary_key - this_belongs_tos - excluded_columns).each do |column|
+            template << column.to_sym
+          end
+          # Okay, at this point it really searches for the uniques, and in the "strict" (not loose) kind of way
+          requireds += _find_requireds(this_klass, false, [this_klass.primary_key]).first.map { |r| "#{path}#{r}".to_sym }
+          # Now add the foreign keys and any has_manys in the form of references to associated models
+          assocs.each do |k, assoc|
+            # # assoc.first describes this foreign key and class, and is used for a "reverse poison"
+            # # detection so we don't fold back on ourselves
+            next if poison_links.include?(assoc.first)
+
+            is_has_many = (assoc.first.last == assoc.last)
+            if hops.zero?
+              # For has_one or has_many, exclude with priority the foreign key column(s) we rode in here on
+              priority_excluded_columns = assoc.first.first if is_has_many
+              # puts "Excluded: #{priority_excluded_columns.inspect}"
+              unique, new_requireds = _suggest_unique_column(assoc.last, priority_excluded_columns, "#{path}#{k}_")
+              template << { k => unique }
+              requireds += new_requireds
+            else
+              new_poison_links =
+                if is_has_many
+                  # binding.pry if assoc.first.last.nil?
+                  # has_many is simple, just exclude how we got here from the foreign table
+                  [assoc.first]
+                else
+                  # belongs_to is more involved since there may be multiple foreign keys which point
+                  # from the foreign table to this primary one, so exclude all these links.
+                  _find_assocs(:belongs_to, assoc.first.last, assoc.last, errored_assocs).map do |f_assoc|
+                    [[f_assoc.foreign_key.to_s], f_assoc.active_record]
+                  end
+                end
+              # puts "New Poison: #{new_poison_links.map{|a| "#{a.first.inspect} - #{a.last.name}"}.join(' / ')}"
+              # if (poison_links & new_poison_links).empty?
+              #   Store the ones to do the next round
+              #   puts "Test against #{assoc.first.inspect}"
+              template << { k => (next_template = []) }
+              next_layer << [do_has_many, assoc.last, "#{path}#{k}_", next_template]
+              poison_links += (new_poison_links - poison_links)
+              # end
+            end
           end
         end
-      end
+        break if hops.zero? || next_layer.empty?
 
-      # Include all columns except for the primary key, any foreign keys, and excluded_columns
-      # %%% add EXCLUDED_ALL_COLUMNS || ...
-      excluded_columns = %w[created_at updated_at deleted_at]
-      template = (this_klass.columns.map(&:name) - this_primary_key - this_belongs_tos - excluded_columns)
-      template.map!(&:to_sym)
-      # Okay, at this point it really searches for the uniques, and in the "strict" (not loose) kind of way
-      requireds = _find_requireds(this_klass, false, [this_klass.primary_key]).first.map { |r| "#{path}#{r}".to_sym }
-      # Now add the foreign keys and any has_manys in the form of references to associated models
-      assocs.each do |k, assoc|
-        # assoc.first describes this foreign key and class, and is used for a "reverse poison"
-        # detection so we don't fold back on ourselves
-        next if poison_links.include?(assoc.first)
-
-        is_has_many = (assoc.first.last == assoc.last)
-        # puts "#{k} #{hops}"
-        unique, new_requireds =
-          if hops.zero?
-            # For has_one or has_many, exclude with priority the foreign key column(s) we rode in here on
-            priority_excluded_columns = assoc.first.first if is_has_many
-            # puts "Excluded: #{priority_excluded_columns.inspect}"
-            _suggest_unique_column(assoc.last, priority_excluded_columns, "#{path}#{k}_")
-          else
-            new_poison_links =
-              if is_has_many
-                # has_many is simple, just exclude how we got here from the foreign table
-                [assoc.first]
-              else
-                # belongs_to is more involved since there may be multiple foreign keys which point
-                # from the foreign table to this primary one, so exclude all these links.
-                _find_assocs(:belongs_to, assoc.first.last, assoc.last, nil, errored_assocs).map do |f_assoc|
-                  [[f_assoc.foreign_key.to_s], f_assoc.active_record]
-                end
-              end
-            # puts "New Poison: #{new_poison_links.inspect}"
-            _suggest_template(hops - 1, do_has_many, assoc.last, poison_links + new_poison_links, "#{path}#{k}_")
-          end
-        template << { k => unique }
-        requireds += new_requireds
+        hops -= 1
+        this_layer = next_layer
       end
-      [template, requireds]
+      [whole_template, requireds]
     end
 
     # Find belongs_tos for this model to one more more other klasses
-    def self._find_assocs(macro, klass, to_klass, using_fk = nil, errored_assocs)
+    def self._find_assocs(macro, klass, to_klass, errored_assocs, using_fk = nil)
       case macro
       when :belongs_to
         klass.reflect_on_all_associations.each_with_object([]) do |bt_assoc, s|
@@ -294,7 +316,7 @@ module DutyFree
       end
       uniques.map!(&:name)
       # Finally if nothing else then just accept the PK, if there is one
-      uniques = [klass.primary_key] if klass.primary_key && uniques.empty? && priority_excluded_columns.exclude?(klass.primary_key)
+      uniques = [klass.primary_key] if klass.primary_key && uniques.empty? && (!priority_excluded_columns || priority_excluded_columns.exclude?(klass.primary_key))
       [uniques, requireds]
     end
 

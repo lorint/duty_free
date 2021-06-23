@@ -79,14 +79,14 @@ module DutyFree
           end
         )
       end
-      print "\nThinking..."
+      puts "\nThinking..."
 
       # %%% Find out how many hops at most we can go from this model
       max_hm_nav = starting.suggest_template(-1, true, false)
       max_bt_nav = starting.suggest_template(-1, false, false)
       hops_with_hm, num_hm_hops_tables = calc_num_hops([[starting, max_hm_nav[:all]]], models)
       hops, num_hops_tables = calc_num_hops([[starting, max_bt_nav[:all]]], models)
-      print "\b" * 11
+      # print "\b" * 11
       unless hops_with_hm.length == hops.length
         starting_name = starting.name
         unless (is_hm = ARGV[1]&.downcase)

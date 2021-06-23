@@ -32,12 +32,45 @@ module DutyFree
 
     def self._suggest_template(hops, do_has_many, this_klass)
       poison_links = []
+      requireds = []
+      errored_assocs = []
+      buggy_bts = []
+      is_papertrail = Object.const_defined?('::PaperTrail::Version')
+      # Get a list of all polymorphic models by searching out every has_many that has an :as option
+      all_polymorphics = Hash.new { |h, k| h[k] = [] }
+      _all_models.each do |model|
+        model.reflect_on_all_associations.select do |assoc|
+          # If the model name can not be found then we get something like this here:
+          # 1: from /home/lorin/.rvm/gems/ruby-2.6.5/gems/activerecord-5.2.4.6/lib/active_record/reflection.rb:418:in `compute_class'
+          # /home/lorin/.rvm/gems/ruby-2.6.5/gems/activerecord-5.2.4.6/lib/active_record/inheritance.rb:196:in `compute_type': uninitialized constant Site::SiteTeams (NameError)
+          ret = nil
+          begin
+            ret = assoc.polymorphic? ||
+                  (assoc.options.include?(:as) && !(is_papertrail && assoc.klass&.<=(PaperTrail::Version)))
+          rescue NameError
+            false
+          end
+          ret
+        end.each do |assoc|
+          poly_hm = if assoc.belongs_to?
+                      poly_key = [model, assoc.name.to_sym] if assoc.polymorphic?
+                      nil
+                    else
+                      poly_key = [assoc.klass, assoc.options[:as]]
+                      [model, assoc.macro, assoc.name.to_sym]
+                    end
+          next if all_polymorphics.include?(poly_key) && all_polymorphics[poly_key].include?(poly_hm)
+
+          poly_hms = all_polymorphics[poly_key]
+          poly_hms << poly_hm if poly_hm
+        end
+      end
+
+      bad_polymorphic_hms = []
       # "path" starts with ''
       # "template" starts with [], and we hold on to the root piece here so we can return it after
       # going through all the layers, at which point it will have grown to include the entire hierarchy.
       this_layer = [[do_has_many, this_klass, '', (whole_template = [])]]
-      requireds = []
-      errored_assocs = []
       loop do
         next_layer = []
         this_layer.each do |klass_item|
@@ -63,23 +96,27 @@ module DutyFree
             # Always process belongs_to, and also process has_one and has_many if do_has_many is chosen.
             # Skip any HMT or HABTM. (Maybe break out HABTM into a combo HM and BT in the future.)
             if is_habtm
-              puts "* In the #{this_klass.name} model there's a problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because join table \"#{assoc.join_table}\" does not exist.  You can create it with a create_join_table migration." unless ActiveRecord::Base.connection.table_exists?(assoc.join_table)
+              puts "* #{this_klass.name} model - problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because join table \"#{assoc.join_table}\" does not exist.  You can create it with a create_join_table migration." unless ActiveRecord::Base.connection.table_exists?(assoc.join_table)
               # %%% Search for other associative candidates to use instead of this HABTM contraption
-              puts "* In the #{this_klass.name} model there's a problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because it includes \"through: #{assoc.options[:through].inspect}\" which is pointless and should be removed." if assoc.options.include?(:through)
+              puts "* #{this_klass.name} model - problem with:  \"has_and_belongs_to_many :#{assoc.name}\"  because it includes \"through: #{assoc.options[:through].inspect}\" which is pointless and should be removed." if assoc.options.include?(:through)
             end
             if (is_through = assoc.is_a?(ActiveRecord::Reflection::ThroughReflection)) && assoc.options.include?(:as)
-              puts "* In the #{this_klass.name} model there's a problem with:  \"has_many :#{assoc.name} through: #{assoc.options[:through].inspect}\"  because it also includes \"as: #{assoc.options[:as].inspect}\", " \
+              puts "* #{this_klass.name} model - problem with:  \"has_many :#{assoc.name} through: #{assoc.options[:through].inspect}\"  because it also includes \"as: #{assoc.options[:as].inspect}\", " \
                    "so please choose either for this line to be a \"has_many :#{assoc.name} through:\" or to be a polymorphic \"has_many :#{assoc.name} as:\".  It can't be both."
             end
             next if is_through || is_habtm || (!is_belongs_to && !do_has_many) || errored_assocs.include?(assoc)
 
-            if is_belongs_to && assoc.options[:polymorphic] # Polymorphic belongs_to?
-              # Load all models
-              # %%% Note that this works in Rails 5.x, but may not work in Rails 6.0 and later, which uses the Zeitwerk loader by default:
-              # puts "Poly: #{assoc.name}"
-              Rails.configuration.eager_load_namespaces.select { |ns| ns < Rails::Application }.each(&:eager_load!)
+            # Polymorphic belongs_to?
+            # (checking all_polymorphics in order to handle the rare case when the belongs_to side of a polymorphic association is missing  "polymorphic: true")
+            if is_belongs_to && (
+                                  assoc.options[:polymorphic] ||
+                                  (
+                                    all_polymorphics.include?(poly_key = [assoc.active_record, assoc.name.to_sym]) &&
+                                    all_polymorphics[poly_key].map { |p| p&.first }.include?(this_klass)
+                                  )
+                                )
               # Find all current possible polymorphic relations
-              ActiveRecord::Base.descendants.each do |model|
+              _all_models.each do |model|
                 # Skip auto-generated HABTM_DestinationModel models
                 next if model.respond_to?(:table_name_resolver) &&
                         model.name.start_with?('HABTM_') &&
@@ -105,18 +142,50 @@ module DutyFree
               rescue NameError # For models which cannot be found by name
               end
               # Skip any PaperTrail audited things
-              next if (Object.const_defined?('PaperTrail::Version') && assoc_klass <= PaperTrail::Version && assoc.options[:as]) ||
+              # rubocop:disable Lint/SafeNavigationConsistency
+              next if (Object.const_defined?('PaperTrail::Version') && assoc_klass&.<=(PaperTrail::Version) && assoc.options.include?(:as)) ||
                       # And any goofy self-referencing aliases
                       (!is_belongs_to && assoc_klass <= assoc.active_record && assoc.foreign_key.to_s == assoc.active_record.primary_key)
 
+              # rubocop:enable Lint/SafeNavigationConsistency
+
+              # Avoid getting goofed up by the belongs_to side of a broken polymorphic association
+              assoc_klass = nil if assoc.belongs_to? && !(assoc_klass <= ActiveRecord::Base)
+
+              if !is_polymorphic_hm && assoc.options.include?(:as)
+                assoc_klass = assoc.inverse_of.active_record
+                is_polymorphic_hm = true
+                bad_polymorphic_hm = [assoc_klass, assoc.inverse_of]
+                unless bad_polymorphic_hms.include?(bad_polymorphic_hm)
+                  bad_polymorphic_hms << bad_polymorphic_hm
+                  puts "* #{assoc_klass.name} model - problem with the polymorphic association  \"belongs_to :#{assoc.inverse_of.name}\".  You can fix this in one of two ways:"
+                  puts '  (1) add "polymorphic: true" on this belongs_to line, or'
+                  poly_hms = all_polymorphics.inject([]) do |s, poly_hm|
+                    if (key = poly_hm.first).first <= assoc_klass && key.last == assoc.inverse_of.name
+                      s += poly_hm.last
+                    end
+                    s
+                  end
+                  puts "  (2) Undo #{assoc_klass.name} polymorphism by removing  \"as: :#{assoc.inverse_of.name}\"  in these #{poly_hms.length} places:"
+                  poly_hms.each { |poly_hm| puts "      In the #{poly_hm.first.name} class from the line:  #{poly_hm[1]} :#{poly_hm.last}" }
+                end
+              end
+
               new_assoc =
                 if assoc_klass.nil?
-                  puts "* In the #{this_klass.name} model there's a problem with:  \"#{belongs_to_or_has_many} :#{assoc.name}\"  because there is no \"#{assoc.class_name}\" model."
+                  # In case this is a buggy polymorphic belongs_to, keep track of all of these and at the very end
+                  # only show the pertinent ones.
+                  if is_belongs_to
+                    buggy_bts << [this_klass, assoc]
+                  else
+                    puts "* #{this_klass.name} model - problem with:  \"#{belongs_to_or_has_many} :#{assoc.name}\"  because there is no \"#{assoc.class_name}\" model."
+                  end
                   nil # Cause this one to be excluded
                 elsif is_belongs_to
                   this_belongs_tos << (foreign_key = assoc.foreign_key.to_s)
                   [[[foreign_key], assoc.active_record], assoc_klass]
-                else # has_many or has_one
+                elsif _all_tables.include?(assoc_klass.table_name) || # has_many or has_one
+                      (assoc_klass.table_name.start_with?('public.') && _all_tables.include?(assoc_klass.table_name[7..-1]))
                   inverse_foreign_keys = is_polymorphic_hm ? [assoc.type, assoc.foreign_key] : [assoc.inverse_of&.foreign_key&.to_s]
                   missing_key_columns = inverse_foreign_keys - assoc_klass.columns.map(&:name)
                   if missing_key_columns.empty?
@@ -125,9 +194,9 @@ module DutyFree
                     [[inverse_foreign_keys, assoc_klass], assoc_klass]
                   else
                     if inverse_foreign_keys.length > 1
-                      puts "* The #{assoc_klass.name} model is missing #{missing_key_columns.join(' and ')} columns to allow it to support polymorphic inheritance."
+                      puts "* #{assoc_klass.name} model - missing #{missing_key_columns.join(' and ')} columns to allow it to support polymorphic inheritance."
                     else
-                      puts "* In the #{this_klass.name} model there's a problem with:  \"#{belongs_to_or_has_many} :#{assoc.name}\"."
+                      puts "* #{this_klass.name} model - problem with:  \"#{belongs_to_or_has_many} :#{assoc.name}\"."
 
                       # Most general related parent class in case we're STI
                       root_class = test_class = this_klass
@@ -150,22 +219,58 @@ module DutyFree
                             hm_inverses.include?(bt)
                           end
                           fks = inverses.map(&:foreign_key)
-                          fks << "#{root_class.name.underscore}_id" if fks.empty? # All that and still no matches?
-                          unless fks.include?(assoc.foreign_key.to_s)
-                            puts "  Consider adding #{fks.map { |fk| "\"foreign_key: :#{fk}\"" }.join(' or ')} (or some other appropriate column from #{assoc_klass.name}) to this #{belongs_to_or_has_many} entry."
+                          # All that and still no matches?
+                          unless fks.present? || assoc_klass.columns.map(&:name).include?(suggested_fk = "#{root_class.name.underscore}_id")
+                            # Find any polymorphic association on this model (that we're not already tied to) that could be used.
+                            poly_hms = all_polymorphics.each_with_object([]) do |p, s|
+                              if p.first.first == assoc_klass &&
+                                 p.last.none? { |poly_hm| this_klass <= poly_hm.first } # <= to deal with polymorphic inheritance
+                                s << p.first
+                              end
+                              s
+                            end
+
+                            # Consider all the HMT with through: :contacts, find their source(s)
+                            poly_hmts = this_klass.reflect_on_all_associations.each_with_object([]) do |a, s|
+                              if [:has_many, :has_one].include?(a.macro) && a.options[:source] &&
+                                 a.options[:through] == assoc.name
+                                s << a.options[:source]
+                              end
+                              s
+                            end
+                            poly_hms_hmts = poly_hms.select { |poly_hm| poly_hmts.include?(poly_hm.last) }
+                            poly_hms = poly_hms_hmts unless poly_hms_hmts.blank?
+
+                            poly_hms.map! { |poly_hm| "\"as: :#{poly_hm.last}\"" }
+                            if poly_hms.blank?
+                              puts "    Consider removing this #{belongs_to_or_has_many} because the #{assoc_klass.name} model does not include a column named \"#{suggested_fk}\"."
+                            else
+                              puts "    Consider adding #{poly_hms.join(' or ')} to establish a valid polymorphic association."
+                            end
+                            is_mentioned_consider = true
+                          end
+                          unless fks.empty? || fks.include?(assoc.foreign_key.to_s)
+                            puts "    Consider adding #{fks.map { |fk| "\"foreign_key: :#{fk}\"" }.join(' or ')} (or some other appropriate column from #{assoc_klass.name}) to this #{belongs_to_or_has_many} entry."
                             is_mentioned_consider = true
                           end
                         else
-                          puts "  (Cannot find foreign key \"#{inverse_foreign_keys.first.inspect}\" in #{assoc_klass.name}.)"
+                          puts "    (Cannot find foreign key \"#{inverse_foreign_keys.first.inspect}\" in #{assoc_klass.name}.)"
                         end
                       end
-                      if inverses.present?
-                        print is_mentioned_consider ? '  Also consider ' : '  Consider '
+                      if inverses.empty?
+                        opposite_macro = assoc.belongs_to? ? 'has_many or has_one' : 'belongs_to'
+                        puts "    (Could not identify any inverse #{opposite_macro} association in the #{assoc_klass.name} model.)"
+                      else
+                        print is_mentioned_consider ? '    Also consider ' : '    Consider '
                         puts "adding \"#{inverses.map { |x| "inverse_of: :#{x.name}" }.join(' or ')}\" to this entry."
                       end
                     end
                     nil
                   end
+                else
+                  puts "* Missing table #{assoc_klass.table_name} for class #{assoc_klass.name}"
+                  puts '    (Maybe try running:  bin/rails db:migrate )'
+                  nil # Related has_* is missing its table
                 end
               if new_assoc.nil?
                 errored_assocs << assoc
@@ -226,7 +331,43 @@ module DutyFree
         hops -= 1
         this_layer = next_layer
       end
+      (buggy_bts - bad_polymorphic_hms).each do |bad_bt|
+        puts "* #{bad_bt.first.name} model - problem with:  \"belongs_to :#{bad_bt.last.name}\"  because there is no \"#{bad_bt.last.class_name}\" model."
+      end
       [whole_template, requireds]
+    end
+
+    # Load all models
+    # %%% Note that this works in Rails 5.x, but may not work in Rails 6.0 and later, which uses the Zeitwerk loader by default:
+    def self._all_models
+      unless ActiveRecord::Base.instance_variable_get(:@eager_loaded_all)
+        if ActiveRecord.version < ::Gem::Version.new('4.0')
+          Rails.configuration.eager_load_paths
+        else
+          Rails.configuration.eager_load_namespaces.select { |ns| ns < Rails::Application }.each(&:eager_load!)
+        end
+        ActiveRecord::Base.instance_variable_set(:@eager_loaded_all, true)
+      end
+      ActiveRecord::Base.descendants
+    end
+
+    # Load all tables
+    def self._all_tables
+      unless (all_tables = ActiveRecord::Base.instance_variable_get(:@_all_tables))
+        sql = if ActiveRecord::Base.connection.class.name.end_with?('::SQLite3Adapter')
+                "SELECT DISTINCT name AS table_name FROM sqlite_master WHERE type = 'table'"
+              else
+                # For everything else, which would be "::PostgreSQLAdapter", "::MysqlAdapter", or "::Mysql2Adapter":
+                "SELECT DISTINCT table_name FROM INFORMATION_SCHEMA.TABLES WHERE table_type = 'BASE TABLE'"
+              end
+        # The MySQL version of execute_sql returns arrays instead of a hash when there's just one column asked for.
+        all_tables = ActiveRecord::Base.execute_sql(sql).each_with_object({}) do |row, s|
+          s[row.is_a?(Array) ? row.first : row['table_name']] = nil
+          s
+        end
+        ActiveRecord::Base.instance_variable_set(:@_all_tables, all_tables)
+      end
+      all_tables
     end
 
     # Find belongs_tos for this model to one more more other klasses
@@ -241,14 +382,14 @@ module DutyFree
                              (using_fk.nil? || bt_assoc.foreign_key == using_fk)
           rescue NameError
             errored_assocs << bt_assoc
-            puts "* In the #{bt_assoc.active_record.name} model  \"belongs_to :#{bt_assoc.name}\"  could not find a model named #{bt_assoc.class_name}."
+            puts "* #{bt_assoc.active_record.name} model -  \"belongs_to :#{bt_assoc.name}\"  could not find a model named #{bt_assoc.class_name}."
           end
           s
         end
       when :has_many # Also :has_one
         klass.reflect_on_all_associations.each_with_object([]) do |hm_assoc, s|
           next if ![:has_many, :has_one].include?(hm_assoc.macro) || errored_assocs.include?(hm_assoc) ||
-                  (Object.const_defined?('PaperTrail::Version') && hm_assoc.klass <= PaperTrail::Version && hm_assoc.options[:as]) # Skip any PaperTrail associations
+                  (Object.const_defined?('PaperTrail::Version') && hm_assoc.klass <= PaperTrail::Version && hm_assoc.options.include?(:as)) # Skip any PaperTrail associations
 
           s << hm_assoc if hm_assoc.klass == to_klass && (using_fk.nil? || hm_assoc.foreign_key == using_fk)
           s
@@ -286,7 +427,7 @@ module DutyFree
             s << attrib
           else
             unless klass.instance_methods.map(&:to_s).include?(attrib)
-              puts "* In the #{klass.name} model  \"validates_presence_of :#{attrib}\"  should be removed as it does not refer to any existing column or relation."
+              puts "* #{klass.name} model -  \"validates_presence_of :#{attrib}\"  should be removed as it does not refer to any existing column or relation."
               errored_columns << klass_col
             end
           end

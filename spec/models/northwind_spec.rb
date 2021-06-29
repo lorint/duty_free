@@ -2493,7 +2493,10 @@ RSpec.describe 'Employee', type: :model do
           'OD Discount' => 'Order Details Discount',
           'OD Product' => 'Order Details Product Product Name'
         }
-      }.freeze
+      }.freeze,
+      # Use non-optional foreign keys (in this case employee_id and customer_id) to identify uniqueness.
+      # This causes only INSERTs to be performed as the trio of customer / employee / order_date is always unique.
+      true
     )
     # Although 5 other imports have occurred, this returns specifically the results of importing to Order
   end

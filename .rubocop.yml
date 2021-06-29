@@ -30,10 +30,10 @@ Lint/ConstantDefinitionInBlock: # (new in 0.91)
 Metrics/AbcSize:
   Exclude:
     - spec/test_app/db/migrate/*
-  Max: 386
+  Max: 398
 
 Metrics/BlockLength:
-  Max: 198
+  Max: 202
   Exclude:
     - spec/models/northwind_spec.rb
 
@@ -50,7 +50,7 @@ Metrics/CyclomaticComplexity:
   Max: 122
 
 Metrics/MethodLength:
-  Max: 254
+  Max: 265
   Exclude:
     - spec/test_app/db/migrate/*
     - spec/models/northwind_spec.rb
@@ -59,10 +59,10 @@ Metrics/ModuleLength:
   Max: 484
 
 Metrics/ParameterLists:
-  Max: 12
+  Max: 13
 
 Metrics/PerceivedComplexity:
-  Max: 135
+  Max: 137
 
 Style/FrozenStringLiteralComment:
   Exclude:

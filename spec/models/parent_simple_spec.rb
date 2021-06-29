@@ -85,4 +85,87 @@ RSpec.describe 'Parent', type: :model do
     # The generated CSV exactly matches the original which we started with
     expect(exported_csv).to eq(csv_in)
   end
+
+  it 'should be able to import from CSV data having a different column order' do
+    csv_in = <<~CSV
+      childdateofbirth,childfirstname,childlastname,address,parent_1_firstname,parent_1_lastname
+      2002-11-11,Jessica,Wilson,68 Bell Road,John,Wilson
+      2006-10-01,Josh,Wilson,68 Bell Road,John,Wilson
+    CSV
+    child_info_csv = CSV.new(csv_in)
+
+    # Import CSV data
+    # ---------------
+    expect { Parent.import(child_info_csv) }.not_to raise_error
+
+    parents = Parent.order(:id).pluck(:firstname, :lastname, :address)
+    expect(parents.count).to eq(1)
+    expect(parents).to eq([['John', 'Wilson', '68 Bell Road']])
+
+    children = Child.order(:id).pluck(:firstname, :lastname, :dateofbirth)
+    expect(children.count).to eq(2)
+    expect(children).to eq(
+      [
+        ['Jessica', 'Wilson', Date.new(2002, 11, 11)],
+        ['Josh', 'Wilson', Date.new(2006, 10, 1)]
+      ]
+    )
+  end
+
+  it 'should allow for some columns to be missing' do
+    # As long as we're not missing the uniques columns, we're fine
+    csv_in = <<~CSV
+      childdateofbirth,childfirstname,address,parent_1_firstname
+      2002-11-11,Jessica,68 Bell Road,John
+      2006-10-01,Josh,68 Bell Road,John
+    CSV
+    child_info_csv = CSV.new(csv_in)
+
+    # Import CSV data
+    # ---------------
+    expect { Parent.import(child_info_csv) }.not_to raise_error
+
+    parents = Parent.order(:id).pluck(:firstname, :lastname, :address)
+    expect(parents.count).to eq(1)
+    expect(parents).to eq([['John', nil, '68 Bell Road']])
+
+    children = Child.order(:id).pluck(:firstname, :lastname, :dateofbirth)
+    expect(children.count).to eq(2)
+    expect(children).to eq(
+      [
+        ['Jessica', nil, Date.new(2002, 11, 11)],
+        ['Josh', nil, Date.new(2006, 10, 1)]
+      ]
+    )
+  end
+
+  it 'should not create duplicate data even when there are duplicate rows' do
+    # Consider that uniqueness is derived from the parent and child's first name, and not their last name.
+    # In the case of Josh Barvis, that row is INSERTed, and then UPDATEd when the next row comes along,
+    # effectively saying that Josh's last name is Wilson and not Barvis.
+    csv_in = <<~CSV
+      childdateofbirth,childfirstname,childlastname,address,parent_1_firstname,parent_1_lastname
+      2002-11-11,Jessica,Wilson,68 Bell Road,John,Wilson
+      2006-10-01,Josh,Barvis,68 Bell Road,John,Barvis
+      2006-10-01,Josh,Wilson,68 Bell Road,John,Wilson
+    CSV
+    child_info_csv = CSV.new(csv_in)
+
+    # Import CSV data
+    # ---------------
+    expect { Parent.import(child_info_csv) }.not_to raise_error
+
+    parents = Parent.order(:id).pluck(:firstname, :lastname, :address)
+    expect(parents.count).to eq(1)
+    expect(parents).to eq([['John', 'Wilson', '68 Bell Road']])
+
+    children = Child.order(:id).pluck(:firstname, :lastname, :dateofbirth)
+    expect(children.count).to eq(2)
+    expect(children).to eq(
+      [
+        ['Jessica', 'Wilson', Date.new(2002, 11, 11)],
+        ['Josh', 'Wilson', Date.new(2006, 10, 1)]
+      ]
+    )
+  end
 end

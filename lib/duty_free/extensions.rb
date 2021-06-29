@@ -9,6 +9,7 @@ module DutyFree
   # rubocop:disable Style/CommentedKeyword
   module Extensions
     MAX_ID = Arel.sql('MAX(id)')
+    IS_AMOEBA = Gem.loaded_specs['amoeba']
 
     def self.included(base)
       base.send :extend, ClassMethods
@@ -111,8 +112,8 @@ module DutyFree
         rows
       end
 
-      def df_import(data, import_template = nil)
-        ::DutyFree::Extensions.import(self, data, import_template)
+      def df_import(data, import_template = nil, insert_only = false)
+        ::DutyFree::Extensions.import(self, data, import_template, insert_only)
       end
 
     private
@@ -159,7 +160,7 @@ module DutyFree
       # For use with importing, based on the provided column list calculate all valid combinations
       # of unique columns.  If there is no valid combination, throws an error.
       # Returns an object found by this means, as well as the criteria that was used to find it.
-      def _find_existing(uniques, cols, starred, import_template, keepers, train_we_came_in_here_on,
+      def _find_existing(uniques, cols, starred, import_template, keepers, train_we_came_in_here_on, insert_only,
                          row = nil, klass_or_collection = nil, template_all = nil, trim_prefix = '',
                          assoc = nil, base_obj = nil)
         unless trim_prefix.blank?
@@ -262,7 +263,8 @@ module DutyFree
             # If we're processing a row then this list of foreign key column name entries, named such as
             # "order_id" or "product_id" instead of column-specific stuff like "Order Date" and "Product Name",
             # is kept until the last and then gets merged on top of the other criteria before being returned.
-            bt_criteria[(fk_name = sn_bt.foreign_key)] = fk_id
+            fk_name = sn_bt.foreign_key
+            bt_criteria[fk_name] = fk_id unless bt_criteria.include?(fk_name)
 
             # Check to see if belongs_tos are generally required on this specific table
             bt_req_by_default = sn_bt.klass.respond_to?(:belongs_to_required_by_default) &&
@@ -282,7 +284,7 @@ module DutyFree
                     (sn_bt.options[:optional] || !bt_req_by_default)
 
             # Add to the criteria
-            criteria[fk_name] = fk_id
+            criteria[fk_name] = fk_id if insert_only && !criteria.include?(fk_name)
           end
         end
 
@@ -332,14 +334,15 @@ module DutyFree
             # Find by all corresponding columns
             if (row_value = row[v])
               new_criteria_all_nil = false
-              criteria[k_sym] = row_value # The data, or how to look up the data
+              criteria[k_sym] = row_value # The data
             end
           end
         end
+        # puts uniq_lookups.inspect
 
-        return uniq_lookups.merge(criteria) if only_valid_uniques
+        return [uniq_lookups.merge(criteria), bt_criteria] if only_valid_uniques
         # If there's nothing to match upon then we're out
-        return [nil, {}] if new_criteria_all_nil
+        return [nil, {}, {}] if new_criteria_all_nil
 
         # With this criteria, find any matching has_many row we can so we can update it.
         # First try directly looking it up through ActiveRecord.
@@ -410,12 +413,12 @@ module DutyFree
         # Standard criteria as well as foreign key column name detail with exact foreign keys
         # that match up to a primary key so that if needed a new related object can be built,
         # complete with all its association detail.
-        [found_object, criteria.merge(bt_criteria)]
+        [found_object, criteria, bt_criteria]
       end # _find_existing
     end # module ClassMethods
 
     # With an array of incoming data, the first row having column names, perform the import
-    def self.import(obj_klass, data, import_template = nil)
+    def self.import(obj_klass, data, import_template = nil, insert_only)
       instance_variable_set(:@defined_uniques, nil)
       instance_variable_set(:@valid_uniques, nil)
 
@@ -559,7 +562,7 @@ module DutyFree
             raise ::DutyFree::LessThanHalfAreMatchingColumnsError, I18n.t('import.altered_import_template_coumns') if keepers.length < (cols.length / 2) - 1
 
             # Returns just the first valid unique lookup set if there are multiple
-            valid_unique = obj_klass.send(:_find_existing, uniques, cols, starred, import_template, keepers, false)
+            valid_unique, bt_criteria = obj_klass.send(:_find_existing, uniques, cols, starred, import_template, keepers, false, insert_only)
             # Make a lookup from unique values to specific IDs
             existing = obj_klass.pluck(*([:id] + valid_unique.keys)).each_with_object(existing) do |v, s|
               s[v[1..-1].map(&:to_s)] = v.first
@@ -578,16 +581,17 @@ module DutyFree
             to_be_saved = []
             # Check to see if they want to preprocess anything
             existing_unique = @before_process.call(valid_unique, existing_unique) if @before_process ||= import_template[:before_process]
-            if (criteria = existing[existing_unique])
-              obj = obj_klass.find(criteria)
-            else
-              is_insert = true
-              # unless build_tables.empty? # include?()
-              #   binding.pry
-              #   x = 5
-              # end
-              to_be_saved << [obj = obj_klass.new]
-            end
+            obj = if (criteria = existing[existing_unique])
+                    obj_klass.find(criteria)
+                  else
+                    is_insert = true
+                    # unless build_tables.empty? # include?()
+                    #   binding.pry
+                    #   x = 5
+                    # end
+                    obj_klass.new
+                  end
+            to_be_saved << [obj] unless criteria # || this one has any belongs_to that will be modified here
             sub_obj = nil
             polymorphics = []
             sub_objects = {}
@@ -623,18 +627,21 @@ module DutyFree
                   start = 0
                   trim_prefix = v.titleize[start..-(v.name.length + 2)]
                   trim_prefix << ' ' unless trim_prefix.blank?
-                  if (sub_next = sub_obj.send(path_part)).nil? && assoc.belongs_to?
+                  if assoc.belongs_to?
                     klass = Object.const_get(assoc&.class_name)
                     # Try to find a unique item if one is referenced
                     sub_next = nil
                     begin
-                      sub_next, criteria = klass.send(:_find_existing, uniques, cols, starred, import_template, keepers, nil, row, klass, all, trim_prefix, assoc)
+                      sub_next, criteria, bt_criteria = klass.send(:_find_existing, uniques, cols, starred, import_template, keepers, nil,
+                                                                   false, # insert_only
+                                                                   row, klass, all, trim_prefix, assoc)
                     rescue ::DutyFree::NoUniqueColumnError
                     end
-                    # puts "#{v.path} #{criteria.inspect}"
                     bt_name = "#{path_part}="
-                    unless sub_next || (klass == sub_obj.class && criteria.empty?)
-                      sub_next = klass.new(criteria || {})
+                    # Not yet wired up to the right one, or going to the parent of a self-referencing model?
+                    # puts "#{v.path} #{criteria.inspect}"
+                    unless sub_next || (klass == sub_obj.class && (all_criteria = criteria.merge(bt_criteria)).empty?)
+                      sub_next = klass.new(all_criteria || {})
                       to_be_saved << [sub_next, sub_obj, bt_name, sub_next]
                     end
                     # This wires it up in memory, but doesn't yet put the proper foreign key ID in
@@ -654,15 +661,17 @@ module DutyFree
                   # Rails 4.0 and later can do:  sub_next.is_a?(ActiveRecord::Associations::CollectionProxy)
                   elsif [:has_many, :has_one, :has_and_belongs_to_many].include?(assoc.macro) # && !assoc.options[:through]
                     ::DutyFree::Extensions._save_pending(to_be_saved)
+                    sub_next = sub_obj.send(path_part)
                     # Try to find a unique item if one is referenced
                     # %%% There is possibility that when bringing in related classes using a nil
                     # in IMPORT_TEMPLATE[:all] that this will break.  Need to test deeply nested things.
 
                     # assoc.inverse_of is the belongs_to side of the has_many train we came in here on.
-                    sub_hm, criteria = assoc.klass.send(:_find_existing, uniques, cols, starred, import_template, keepers, assoc.inverse_of,
-                                                        row, sub_next, all, trim_prefix, assoc,
-                                                        # Just in case we're running Rails < 4.0 and this is a haas_*
-                                                        sub_obj)
+                    sub_hm, criteria, bt_criteria = assoc.klass.send(:_find_existing, uniques, cols, starred, import_template, keepers, assoc.inverse_of,
+                                                                     false, # insert_only
+                                                                     row, sub_next, all, trim_prefix, assoc,
+                                                                     # Just in case we're running Rails < 4.0 and this is a has_*
+                                                                     sub_obj)
                     # If still not found then create a new related object using this has_many collection
                     # (criteria.empty? ? nil : sub_next.new(criteria))
                     if sub_hm

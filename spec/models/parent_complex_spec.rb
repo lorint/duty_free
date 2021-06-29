@@ -148,18 +148,24 @@ RSpec.describe 'Parent', type: :model do
 
       parents = Parent.order(:id).pluck(:firstname, :lastname, :address)
       expect(parents.count).to eq(3)
-      expect(parents).to eq([['Homer', 'Simpson', '742 Evergreen Terrace'], ['Marge', 'Simpson', '742 Evergreen Terrace'], ['Clancey', 'Wiggum', '732 Evergreen Terrace']])
+      expect(parents).to eq(
+        [
+          ['Homer', 'Simpson', '742 Evergreen Terrace'],
+          ['Marge', 'Simpson', '742 Evergreen Terrace'],
+          ['Clancey', 'Wiggum', '732 Evergreen Terrace']
+        ]
+      )
 
       parent_ids = Parent.order(:id).pluck(:id)
       children = Child.order(:id).pluck(:firstname, :lastname, :dateofbirth, :parent_id)
       expect(children.count).to eq(5)
       expect(children).to eq(
         [
-          ['Bart', 'Simpson', Date.new(2002, 11, 11), parent_ids.first],
-          ['Lisa', 'Simpson', Date.new(2006, 10, 1), parent_ids.first],
-          ['Bart', 'Simpson', Date.new(2002, 11, 11), parent_ids.second],
-          ['Lisa', 'Simpson', Date.new(2006, 10, 1), parent_ids.second],
-          ['Ralph', 'Wiggum', Date.new(2005, 4, 1), parent_ids.third]
+          ['Bart', 'Simpson', Date.new(2002, 11, 11), parent_ids.first], # Homer
+          ['Lisa', 'Simpson', Date.new(2006, 10, 1), parent_ids.first], # Homer
+          ['Bart', 'Simpson', Date.new(2002, 11, 11), parent_ids.second], # Marge
+          ['Lisa', 'Simpson', Date.new(2006, 10, 1), parent_ids.second], # Marge
+          ['Ralph', 'Wiggum', Date.new(2005, 4, 1), parent_ids.third] # Clancey
         ]
       )
       # As an aside -- if you feel that seeing these four entries is inappropriate repetition
@@ -175,6 +181,43 @@ RSpec.describe 'Parent', type: :model do
       #
       # To see an example import with this many-to-many setup in action, check out
       # recipe_spec.rb.
+    end
+
+    it 'should be able to update a foreign key during import' do
+      child_info = [
+        ['Firstname', 'Lastname', 'Dateofbirth', 'Parent Firstname', 'Parent Lastname', 'Parent Address'],
+        ['Bart', 'Simpson', '2002-11-11', 'Homer', 'Simpson', '742 Evergreen Terrace'],
+        ['Lisa', 'Simpson', '2002-11-11', 'Marge', 'Simpson', '742 Evergreen Terrace'],
+        # For Ralph, at first we associate the incorrect parent
+        ['Ralph', 'Wiggum', '2005-04-01', 'Homer', 'Simpson', '742 Evergreen Terrace'],
+        # And then we get it right later with this updated row, which updates the foreign key
+        ['Ralph', "NOT IN UNIQUE SO DOESN'T MATTER", '9999-01-01', 'Clancey', 'Wiggum', '732 Evergreen Terrace']
+      ]
+
+      # Perform the import on CSV data
+      # Get the suggested default import template for the Parent model
+      template_with_parents = Child.suggest_template(1, false, false)
+      # Initially we only force uniqueness on the first string column of Child
+      expect(template_with_parents[:uniques]).to eq([:firstname])
+      # Add in uniqueness for the Parent portion of each incoming row.
+      template_with_parents[:uniques] << :parent_firstname
+
+      # Do the import
+      expect { Child.df_import(child_info, template_with_parents) }.not_to raise_error
+
+      parents = Parent.order(:id).pluck(:firstname)
+      expect(parents).to eq(%w[Homer Marge Clancey])
+
+      parent_ids = Parent.order(:id).pluck(:id)
+      children = Child.order(:id).pluck(:firstname, :lastname, :dateofbirth, :parent_id)
+      expect(children.count).to eq(3)
+      expect(children).to eq(
+        [
+          ['Bart', 'Simpson', Date.new(2002, 11, 11), parent_ids.first], # Homer
+          ['Lisa', 'Simpson', Date.new(2002, 11, 11), parent_ids.second], # Marge
+          ['Ralph', "NOT IN UNIQUE SO DOESN'T MATTER", Date.new(9999, 1, 1), parent_ids.third] # Clancey
+        ]
+      )
     end
 
     it 'should be able to import from CSV data' do

@@ -627,6 +627,7 @@ module DutyFree
                   start = 0
                   trim_prefix = v.titleize[start..-(v.name.length + 2)]
                   trim_prefix << ' ' unless trim_prefix.blank?
+                  binding.pry unless assoc
                   if assoc.belongs_to?
                     klass = Object.const_get(assoc&.class_name)
                     # Try to find a unique item if one is referenced

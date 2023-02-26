@@ -27,7 +27,7 @@ Gem::Specification.new do |s|
   s.required_ruby_version = '>= 2.3.5'
   # rubocop:enable Gemspec/RequiredRubyVersion
 
-  s.add_dependency 'activerecord', ['>= 3.0', '< 6.2']
+  s.add_dependency 'activerecord', '>= 3.0'
 
   s.add_development_dependency 'appraisal', '~> 2.2'
   s.add_development_dependency 'pry-byebug', '~> 3.7.0'

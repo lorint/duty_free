@@ -1,4 +1,4 @@
 # frozen_string_literal: true
 
-class PostgresUser < ActiveRecord::Base
+class User < ActiveRecord::Base
 end

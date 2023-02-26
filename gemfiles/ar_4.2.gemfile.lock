@@ -64,7 +64,7 @@ GEM
       rack (>= 1.0)
     rails-deprecated_sanitizer (1.0.4)
       activesupport (>= 4.2.0.alpha)
-    rails-dom-testing (1.0.9)
+    rails-dom-testing (1.0.10)
       activesupport (>= 4.2.0, < 5.0)
       nokogiri (~> 1.6)
       rails-deprecated_sanitizer (>= 1.0.1)

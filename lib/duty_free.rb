@@ -50,15 +50,15 @@ if ActiveRecord.version < ::Gem::Version.new('3.2') &&
   # Remove circular reference for "now"
   ::DutyFree::Util._patch_require(
     'active_support/values/time_zone.rb', '/activesupport',
-    '  def parse(str, now=now)',
-    '  def parse(str, now=now())'
+    ['  def parse(str, now=now)',
+    '  def parse(str, now=now())']
   )
   # Remove circular reference for "reflection" for ActiveRecord 3.1
   if ActiveRecord.version >= ::Gem::Version.new('3.1')
     ::DutyFree::Util._patch_require(
       'active_record/associations/has_many_association.rb', '/activerecord',
-      'reflection = reflection)',
-      'reflection = reflection())',
+      ['reflection = reflection)',
+      'reflection = reflection())'],
       :HasManyAssociation # Make sure the path for this guy is available to be autoloaded
     )
   end

@@ -37,20 +37,26 @@ module TestApp
 
     config.secret_key_base = '17314af7039573cb0aa484f61005727de8cbc635a0e429816f54254eb07eb3db4bd8d689558403bfa2201b1161baa262974a75042a1eebe56fad8ba7feaae10f'
 
-    # `raise_in_transactional_callbacks` was added in rails 4, then deprecated in rails 5.
+    # `raise_in_transactional_callbacks` was added in rails 4.2, then deprecated in rails 5.
     v = ActiveRecord.version
     config.active_record.raise_in_transactional_callbacks = true if v >= Gem::Version.new('4.2') && v < Gem::Version.new('5.0.0.beta1')
     if v >= Gem::Version.new('5.0.0.beta1') && v < Gem::Version.new('5.1')
       config.active_record.belongs_to_required_by_default = true
       config.active_record.time_zone_aware_types = [:datetime]
     end
-    if v >= Gem::Version.new('5.1')
+    if config.respond_to?(:load_defaults) # Rails >= 5.1
       config.load_defaults '5.1'
       config.active_record.time_zone_aware_types = [:datetime]
     end
 
     if v < Gem::Version.new('6.0') && (ar = config.active_record).respond_to?(:sqlite3) && ar.sqlite3.respond_to?(:represent_boolean_as_integer)
       ar.sqlite3.represent_boolean_as_integer = true
+    elsif v >= Gem::Version.new('6.1')
+      config.active_record.legacy_connection_handling = false if v < Gem::Version.new('7.0')
+      # Deals with either of these warnings:
+      #   URL-safe CSRF tokens are now the default. Use 6.1 defaults or above. (when urlsafe_csrf_tokens = true)
+      #   Non-URL-safe CSRF tokens are deprecated. Use 6.1 defaults or above. (when urlsafe_csrf_tokens = false)
+      config.action_controller.delete(:urlsafe_csrf_tokens)
     end
   end
 end

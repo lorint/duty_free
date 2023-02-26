@@ -14,7 +14,7 @@ seamlessly importing and exporting that data as one spreadsheet.
 | Version        | Documentation                                             |
 | -------------- | --------------------------------------------------------- |
 | Unreleased     | https://github.com/lorint/duty_free/blob/master/README.md |
-| 1.0.8          | https://github.com/lorint/duty_free/blob/v1.0.8/README.md |
+| 1.0.10          | https://github.com/lorint/duty_free/blob/v1.0.10/README.md |
 
 ## Table of Contents
 
@@ -48,10 +48,10 @@ seamlessly importing and exporting that data as one spreadsheet.
 
 ### 1.a. Compatibility
 
-| duty_free      | branch     | tags   | ruby     | activerecord  |
-| -------------- | ---------- | ------ | -------- | ------------- |
-| unreleased     | master     |        | >= 2.3.5 | >= 3.0, < 6.2 |
-| 1.0            | 1-stable   | v1.x   | >= 2.3.5 | >= 3.0, < 6.2 |
+| duty_free      | branch     | tags   | ruby     | activerecord |
+| -------------- | ---------- | ------ | -------- | ------------ |
+| unreleased     | master     |        | >= 2.3.5 | >= 3.0       |
+| 1.0            | 1-stable   | v1.x   | >= 2.3.5 | >= 3.0       |
 
 Duty Free has a compatibility layer which is automatically applied when used along with older
 versions of Rails.  This is provided in order to more easily test the broad range of supported
@@ -68,22 +68,6 @@ ActiveRecord.  The motivation behind providing support for such old versions of 
 simply in the hopes that data in older applications can easily be extracted and put into newer
 systems, without worrying about the details of maintaining foreign keys and such during the
 transition.
-
-Speaking of newer versions of Ruby, if you'd like to use the latest version then for those using
-RVM you might have noticed that it won't yet install.  Here's the secret to install Ruby 3.0. First
-make sure you're upgraded to the latest stable version of RVM:
-
-    rvm get stable
-
-and then download the .gz file for Ruby 3.0 from:
-
-    https://cache.ruby-lang.org/pub/ruby/3.0/ruby-3.0.0.tar.gz
-
-and finally move this .gz file into your .rvm/archives folder, while also renaming it in the process
-to be a .tar.bz2, which can then be installed:
-
-    mv ~/Downloads/ruby-3.0.0.tar.gz ~/.rvm/archives/ruby-3.0.0.tar.bz2
-    rvm install ruby-3.0.0
 
 ### 1.b. Installation
 
@@ -248,7 +232,7 @@ See our [contribution guidelines][5]
 
 ## Intellectual Property
 
-Copyright (c) 2020 Lorin Thwaits (lorint@gmail.com)
+Copyright (c) 2024 Lorin Thwaits (lorint@gmail.com)
 Released under the MIT licence.
 
 [1]: https://github.com/lorint/duty_free/tree/1-stable
